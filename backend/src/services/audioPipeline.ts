@@ -141,6 +141,19 @@ export function clearTTSQueue(sessionId: string): void {
   processingTTS.delete(sessionId);
 }
 
+function getEmotionContext(session: any): string {
+  if (!session?.emotionHistory || session.emotionHistory.length <= 1) {
+    return '';
+  }
+  
+  const recentEmotions = session.emotionHistory.slice(-3); // Last 3 emotions
+  const emotionSummary = recentEmotions
+    .map((e: any) => e.emotion)
+    .join(' → ');
+  
+  return `Recent emotion progression: ${emotionSummary}.`;
+}
+
 export async function listResembleVoices(): Promise<void> {
   try {
     initResemble();
@@ -228,22 +241,54 @@ async function streamInflectionResponse(
   let currentSentence = '';
   const processedSentences = new Set<string>(); // Track processed sentences
 
+  // Add user message to conversation history
+  if (session) {
+    session.conversationHistory.push({
+      role: 'user',
+      content: prompt,
+      timestamp: Date.now()
+    });
+    
+    // Keep only last 20 messages (10 exchanges)
+    if (session.conversationHistory.length > 20) {
+      session.conversationHistory = session.conversationHistory.slice(-20);
+    }
+  }
+
   try {
+    // Build messages array with conversation history
+    const messages = [
+      {
+        role: 'system',
+        content: `You are Pi, a helpful AI assistant. Be conversational and concise. No emojis.
+
+The user's current emotion is: ${session?.emotion || 'neutral'}. ${getEmotionContext(session)}
+
+Respond naturally based on their emotion - be supportive if sad, calm if angry, enthusiastic if happy, etc.`
+      }
+    ];
+
+    // Add conversation history (last 10 messages)
+    if (session?.conversationHistory && session.conversationHistory.length > 0) {
+      const recentHistory = session.conversationHistory.slice(-10);
+      messages.push(...recentHistory.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      })));
+    } else {
+      // If no history, add the current prompt
+      messages.push({
+        role: 'user',
+        content: prompt
+      });
+    }
+
     // Use the correct Inflection API endpoint from the OpenAPI spec
     const response = await axios.post(
       'https://api.inflection.ai/v1/chat/completions',
       {
         model: 'Pi-3.1',
-                 messages: [
-           {
-             role: 'system',
-             content: 'You are Pi, a helpful and friendly AI assistant. Keep responses conversational and concise. Do not use emojis or special characters in your responses.'
-           },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
+        messages,
         stream: true,
         temperature: 0.7,
         max_tokens: 150
@@ -331,6 +376,20 @@ async function streamInflectionResponse(
       response.data.on('error', reject);
     });
 
+    // Add assistant response to conversation history
+    if (session && fullResponse.trim()) {
+      session.conversationHistory.push({
+        role: 'assistant',
+        content: fullResponse.trim(),
+        timestamp: Date.now()
+      });
+      
+      // Keep only last 20 messages (10 exchanges)
+      if (session.conversationHistory.length > 20) {
+        session.conversationHistory = session.conversationHistory.slice(-20);
+      }
+    }
+
     // Log the complete response
     logInflectionResponse(sessionId, prompt, fullResponse, true);
 
@@ -350,6 +409,20 @@ async function streamInflectionResponse(
     }
     
     addToTTSQueue(fallbackResponse, sessionId);
+    
+    // Add fallback response to conversation history
+    if (session) {
+      session.conversationHistory.push({
+        role: 'assistant',
+        content: fallbackResponse,
+        timestamp: Date.now()
+      });
+      
+      // Keep only last 20 messages (10 exchanges)
+      if (session.conversationHistory.length > 20) {
+        session.conversationHistory = session.conversationHistory.slice(-20);
+      }
+    }
     
     // Log the fallback response
     logInflectionResponse(sessionId, prompt, fallbackResponse, false);

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import axios from 'axios';
 import { processAudioPipeline, listResembleVoices } from '../services/audioPipeline';
 
 const router = Router();
@@ -35,6 +36,43 @@ router.get('/voices', async (req, res) => {
   } catch (error) {
     console.error('Error listing voices:', error);
     return res.status(500).json({ error: 'Failed to list voices' });
+  }
+});
+
+// Emotion detection proxy to avoid CORS issues
+router.post('/emotion', async (req, res) => {
+  try {
+    const { image_base64 } = req.body;
+    
+    if (!image_base64) {
+      return res.status(400).json({ error: 'No image_base64 provided' });
+    }
+
+    console.log('Proxying emotion detection request to localhost:5139');
+    
+    // Forward request to emotion server
+    const response = await axios.post('http://localhost:5139/detect', {
+      image_base64
+    }, {
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('Emotion server responded:', response.status);
+    return res.json(response.data);
+    
+  } catch (error) {
+    console.error('Emotion proxy error:', error);
+    if (axios.isAxiosError(error)) {
+      return res.status(500).json({ 
+        error: 'Emotion server error', 
+        details: error.message,
+        serverRunning: error.code !== 'ECONNREFUSED'
+      });
+    }
+    return res.status(500).json({ error: 'Failed to process emotion detection' });
   }
 });
 

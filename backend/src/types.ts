@@ -4,6 +4,8 @@ export interface ActiveSession {
   id: string;
   ws: WebSocket;
   emotion: EmotionType;
+  emotionHistory: Array<{ emotion: EmotionType; timestamp: number }>;
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
   isActive: boolean;
 }
 
