@@ -234,5 +234,4 @@ if __name__ == '__main__':
     print("- GET  /health - Health check")
     print("- POST /detect - Single image detection")
     print("- POST /detect_batch - Batch image detection")
-    print("\nStarting server on http://0.0.0.0:5000")
     app.run(host='0.0.0.0', port=5139, debug=True) 

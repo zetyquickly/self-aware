@@ -10,7 +10,7 @@
 <body>
     <div id="container">
         <div id="header-text">
-            This AI is not on the spectrum. It actually reads the room!
+            This AI is not on the spectrum. It won't bore you if you look zoned out!
         </div>
         <div id="conversation-stream">
             <div id="conversation-content"></div>
@@ -42,13 +42,23 @@
         async function startVideo() {
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true,
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 5 }
+                    },
                     audio: true 
                 });
+                
                 video.srcObject = mediaStream;
-                isStreaming = true;
-                sendVideoFrames();
-                setupAudioStream();
+                
+                // Wait for video to be ready
+                video.onloadedmetadata = () => {
+                    video.play();
+                    isStreaming = true;
+                    sendVideoFrames();
+                    setupAudioStream();
+                };
             } catch (err) {
                 console.error('Error accessing media devices:', err);
             }
@@ -57,14 +67,33 @@
         function sendVideoFrames() {
             if (!isStreaming) return;
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            
-            const frame = canvas.toDataURL('image/jpeg');
-            socket.emit('video_frame', frame);
+            try {
+                // Ensure video is ready
+                if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+                    setTimeout(sendVideoFrames, 100);
+                    return;
+                }
 
-            setTimeout(sendVideoFrames, 100); // Adjust frame rate as needed
+                // Set canvas size to match video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                // Draw current frame
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get frame data with reduced quality
+                const frame = canvas.toDataURL('image/jpeg', 0.8);
+                
+                // Only send if we have valid data
+                if (frame && frame.length > 22) { // "data:image/jpeg;base64," is 22 chars
+                    socket.emit('video_frame', frame);
+                }
+            } catch (err) {
+                console.error('Error capturing video frame:', err);
+            }
+
+            // Schedule next frame
+            setTimeout(sendVideoFrames, 200); // 5 FPS
         }
 
         // Audio streaming and visualization
@@ -268,9 +297,10 @@
             const emotionLabel = document.getElementById('emotion-label');
             const lowerEmotion = emotion.toLowerCase();
             
+            // Update emotion label
             emotionLabel.className = ''; // Reset classes
             emotionLabel.classList.add(lowerEmotion);
-            emotionLabel.textContent = emotion;
+            emotionLabel.textContent = emotion.toUpperCase();
             
             // Add pulse animation
             emotionLabel.style.transform = 'translateX(-50%) scale(1.1)';
