@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,14 +16,14 @@
         <div id="center-control">
             <button id="voiceButton" class="voice-button">
                 <div class="pulse-ring"></div>
-                Start Voice AI
+                Start
             </button>
         </div>
 
         <div id="video-container">
             <video id="videoElement" autoplay playsinline></video>
             <canvas id="canvas" style="display:none;"></canvas>
-            <div id="emotion-label">SAD</div>
+            <div id="emotion-label" class="neutral">NEUTRAL</div>
         </div>
     </div>
 
@@ -63,18 +64,31 @@
             setTimeout(sendVideoFrames, 100); // Adjust frame rate as needed
         }
 
-        // Audio streaming
+        // Audio streaming and visualization
         function setupAudioStream() {
             const audioContext = new AudioContext();
             const source = audioContext.createMediaStreamSource(mediaStream);
+            const analyser = audioContext.createAnalyser();
             const processor = audioContext.createScriptProcessor(1024, 1, 1);
 
+            analyser.fftSize = 256;
+            source.connect(analyser);
             source.connect(processor);
             processor.connect(audioContext.destination);
 
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            // Simple audio monitoring
+            function monitorAudio() {
+                analyser.getByteFrequencyData(dataArray);
+                requestAnimationFrame(monitorAudio);
+            }
+            
+            monitorAudio();
+
             processor.onaudioprocess = function(e) {
                 const audioData = e.inputBuffer.getChannelData(0);
-                // Convert audio data to base64 or appropriate format
+
                 const audioDataArray = Array.from(audioData);
                 socket.emit('audio_data', audioDataArray);
             };
@@ -99,10 +113,10 @@
             voiceButton.classList.toggle('active');
             
             if (isVoiceActive) {
-                voiceButton.textContent = 'Stop Voice AI';
+                voiceButton.textContent = 'Stop';
                 startVideo(); // Start video and audio
             } else {
-                voiceButton.textContent = 'Start Voice AI';
+                voiceButton.textContent = 'Start';
                 isStreaming = false;
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(track => track.stop());
@@ -111,33 +125,120 @@
         };
 
         // Function to add message to conversation stream
-        function addToConversation(text, type) {
+        let currentResponseDiv = null;
+        let streamChangeTimeout = null;
+        let lastStreamChangeTime = 0;
+
+        function addToConversation(text, type, isStreaming = false, isStreamChange = false) {
             const conversationContent = document.getElementById('conversation-content');
-            const messageDiv = document.createElement('div');
-            messageDiv.style.padding = '10px';
-            messageDiv.style.borderRadius = '8px';
-            messageDiv.style.maxWidth = '80%';
-            
-            if (type === 'transcription') {
-                messageDiv.style.backgroundColor = '#333';
-                messageDiv.style.alignSelf = 'flex-start';
-            } else if (type === 'response') {
-                messageDiv.style.backgroundColor = '#2196F3';
-                messageDiv.style.alignSelf = 'flex-end';
-            } else if (type === 'intent') {
-                messageDiv.style.backgroundColor = '#4CAF50';
-                messageDiv.style.alignSelf = 'center';
-                messageDiv.style.fontStyle = 'italic';
+            const currentTime = Date.now();
+
+            if (type === 'response' && isStreaming) {
+                // Handle streaming AI responses
+                if (!currentResponseDiv) {
+                    currentResponseDiv = document.createElement('div');
+                    currentResponseDiv.className = 'message-div response';
+                    currentResponseDiv.style.padding = '10px';
+                    currentResponseDiv.style.borderRadius = '8px';
+                    currentResponseDiv.style.maxWidth = '80%';
+                    currentResponseDiv.style.backgroundColor = '#2196F3';
+                    currentResponseDiv.style.alignSelf = 'flex-end';
+                    
+                    // Add label wrapper for streaming response
+                    const labelWrapper = document.createElement('div');
+                    labelWrapper.className = 'message-label';
+                    labelWrapper.textContent = 'AI:';
+                    
+                    const textContent = document.createElement('div');
+                    textContent.className = 'message-text streaming-text';
+                    
+                    currentResponseDiv.appendChild(labelWrapper);
+                    currentResponseDiv.appendChild(textContent);
+                    conversationContent.appendChild(currentResponseDiv);
+                }
+                
+                if (isStreamChange && (currentTime - lastStreamChangeTime > 2000)) {
+                    // Enhanced visual indicator for stream change
+                    const changeIndicator = document.createElement('div');
+                    changeIndicator.className = 'stream-change-indicator';
+                    const emotionLabel = document.getElementById('emotion-label');
+                    const currentEmotion = emotionLabel.textContent.toLowerCase();
+                    changeIndicator.innerHTML = `<span class="emotion-icon ${currentEmotion}">●</span> Adapting to ${currentEmotion} emotion <span class="emotion-icon ${currentEmotion}">●</span>`;
+                    conversationContent.insertBefore(changeIndicator, currentResponseDiv);
+                    
+                    // Add transition effect with emotion-based color
+                    currentResponseDiv.style.backgroundColor = getEmotionColor(currentEmotion);
+                    clearTimeout(streamChangeTimeout);
+                    streamChangeTimeout = setTimeout(() => {
+                        currentResponseDiv.style.backgroundColor = '#2196F3';
+                    }, 1000);
+                    
+                    lastStreamChangeTime = currentTime;
+                }
+                
+                currentResponseDiv.querySelector('.streaming-text').textContent = text;
+            } else {
+                // For non-streaming messages (user transcriptions and completed responses)
+                currentResponseDiv = null; // Reset streaming div
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-div ${type}`;
+                messageDiv.style.padding = '10px';
+                messageDiv.style.borderRadius = '8px';
+                messageDiv.style.maxWidth = '80%';
+                
+                if (type === 'transcription') {
+                    // User messages
+                    messageDiv.style.backgroundColor = '#333';
+                    messageDiv.style.alignSelf = 'flex-start';
+                    
+                    // Add label wrapper
+                    const labelWrapper = document.createElement('div');
+                    labelWrapper.className = 'message-label';
+                    labelWrapper.textContent = 'HUMAN:';
+                    
+                    const textContent = document.createElement('div');
+                    textContent.className = 'message-text';
+                    textContent.textContent = text;
+                    
+                    messageDiv.appendChild(labelWrapper);
+                    messageDiv.appendChild(textContent);
+                    conversationContent.appendChild(messageDiv);
+                } else if (type === 'response') {
+                    // Completed AI responses
+                    messageDiv.style.backgroundColor = '#2196F3';
+                    messageDiv.style.alignSelf = 'flex-end';
+                    
+                    // Add label wrapper
+                    const labelWrapper = document.createElement('div');
+                    labelWrapper.className = 'message-label';
+                    labelWrapper.textContent = 'AI:';
+                    
+                    const textContent = document.createElement('div');
+                    textContent.className = 'message-text';
+                    textContent.textContent = text;
+                    
+                    messageDiv.appendChild(labelWrapper);
+                    messageDiv.appendChild(textContent);
+                    conversationContent.appendChild(messageDiv);
+                } else if (type === 'intent') {
+                    // Intent messages (optional)
+                    messageDiv.style.backgroundColor = '#4CAF50';
+                    messageDiv.style.alignSelf = 'center';
+                    messageDiv.style.fontStyle = 'italic';
+                    messageDiv.textContent = text;
+                    conversationContent.appendChild(messageDiv);
+                }
+
             }
             
-            messageDiv.textContent = text;
-            conversationContent.appendChild(messageDiv);
+
             conversationContent.scrollTop = conversationContent.scrollHeight;
         }
 
         // Example usage of conversation stream (you'll need to integrate this with your actual audio processing)
-        socket.on('transcription', (text) => {
-            addToConversation(text, 'transcription');
+        socket.on('transcription', (data) => {
+            addToConversation(data.text, 'transcription', data.streaming, data.streamChange);
         });
 
         socket.on('ai_response', (text) => {
@@ -147,9 +248,118 @@
         socket.on('model_intent', (text) => {
             addToConversation(text, 'intent');
         });
+
+        // Handle emotion updates
+        // Helper function to get emotion-based colors
+        function getEmotionColor(emotion) {
+            const colors = {
+                'happy': '#4CAF50',
+                'sad': '#2196F3',
+                'angry': '#F44336',
+                'neutral': '#9E9E9E'
+            };
+            return colors[emotion.toLowerCase()] || '#2196F3';
+        }
+
+        socket.on('emotion_update', (emotion) => {
+            const emotionLabel = document.getElementById('emotion-label');
+            const lowerEmotion = emotion.toLowerCase();
+            
+            emotionLabel.className = ''; // Reset classes
+            emotionLabel.classList.add(lowerEmotion);
+            emotionLabel.textContent = emotion;
+            
+            // Add pulse animation
+            emotionLabel.style.transform = 'translateX(-50%) scale(1.1)';
+            setTimeout(() => {
+                emotionLabel.style.transform = 'translateX(-50%) scale(1)';
+            }, 200);
+
+            // Update any active streaming response with new emotion color
+            if (currentResponseDiv) {
+                currentResponseDiv.style.backgroundColor = getEmotionColor(lowerEmotion);
+                setTimeout(() => {
+                    currentResponseDiv.style.backgroundColor = '#2196F3';
+                }, 1000);
+            }
+        });
     </script>
 
-    <style>
+<style>
+        /* Message labels styling */
+        .message-label {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            opacity: 0.8;
+            letter-spacing: 1px;
+        }
+
+        .message-text {
+            font-size: 28px;
+            line-height: 1.4;
+        }
+
+        .streaming-text {
+            position: relative;
+        }
+
+        /* Emotion-based colors */
+        .emotion-icon {
+            display: inline-block;
+            margin: 0 5px;
+            animation: pulseIcon 1.5s infinite;
+        }
+
+        .emotion-icon.happy { color: #4CAF50; }
+        .emotion-icon.sad { color: #2196F3; }
+        .emotion-icon.angry { color: #F44336; }
+        .emotion-icon.neutral { color: #9E9E9E; }
+
+        @keyframes pulseIcon {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+        }
+
+        .stream-change-indicator {
+            text-align: center;
+            color: #ff9800;
+            font-size: 16px;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 152, 0, 0.1);
+            border-radius: 20px;
+            animation: fadeInOut 3s ease-in-out;
+            opacity: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        .stream-change-indicator {
+            text-align: center;
+            color: #ff9800;
+            font-size: 12px;
+            margin: 5px 0;
+            animation: fadeInOut 2s ease-in-out;
+            opacity: 0;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .message-div {
+            transition: background-color 0.3s ease;
+        }
+
+        .transcription {
+            position: relative;
+            transition: all 0.3s ease;
+        }
         #container {
             width: 100vw;
             height: 100vh;
@@ -181,15 +391,65 @@
             bottom: 10px;
             left: 50%;
             transform: translateX(-50%);
-            background: #333;
-            padding: 8px 20px;
-            border-radius: 20px;
+            background: rgba(51, 51, 51, 0.9);
+            padding: 15px 35px;
+            border-radius: 30px;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 28px;
             z-index: 1000;
             width: fit-content;
             text-align: center;
-            border: 1px solid #444;
+            border: 3px solid #444;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            backdrop-filter: blur(5px);
+        }
+
+        #emotion-label::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            border-radius: 32px;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+            z-index: -1;
+            transition: all 0.3s ease;
+        }
+
+        #emotion-label:after {
+            content: '●';
+            margin-left: 10px;
+            font-size: 16px;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        #emotion-label.happy {
+            background: rgba(76, 175, 80, 0.9);
+            border-color: #81C784;
+        }
+
+        #emotion-label.sad {
+            background: rgba(33, 150, 243, 0.9);
+            border-color: #64B5F6;
+        }
+
+        #emotion-label.angry {
+            background: rgba(244, 67, 54, 0.9);
+            border-color: #E57373;
+        }
+
+        #emotion-label.neutral {
+            background: rgba(158, 158, 158, 0.9);
+            border-color: #BDBDBD;
         }
 
         #video-container {
@@ -204,20 +464,91 @@
 
         #conversation-stream {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            width: 400px;
-            height: 600px;
-            background: rgba(0, 0, 0, 0.7);
-            border-radius: 12px;
-            padding: 20px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            max-width: 1400px;
+            height: 75vh;
+            background: rgba(0, 0, 0, 0.85);
+            border-radius: 30px;
+            padding: 40px;
             overflow-y: auto;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        #conversation-stream::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        #conversation-stream::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+        }
+
+        #conversation-stream::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 6px;
+        }
+
+        #conversation-stream::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
         }
 
         #conversation-content {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 20px;
+            font-size: 24px;
+            line-height: 1.4;
+        }
+
+        .message-div {
+            padding: 25px 35px !important;
+            font-size: 32px !important;
+            line-height: 1.5;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            border-radius: 20px !important;
+            margin: 10px 0;
+            opacity: 0;
+            animation: messageAppear 0.5s forwards;
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0));
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        @keyframes messageAppear {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-div.transcription {
+            background: linear-gradient(145deg, rgba(51,51,51,0.9), rgba(41,41,41,0.9));
+        }
+
+        .message-div.response {
+            background: linear-gradient(145deg, rgba(33,150,243,0.9), rgba(25,118,210,0.9));
+        }
+
+        .message-div.intent {
+            background: linear-gradient(145deg, rgba(76,175,80,0.9), rgba(56,142,60,0.9));
+            font-size: 24px !important;
+            padding: 15px 25px !important;
+        }
+
+        .stream-change-indicator {
+            font-size: 20px !important;
+            color: #FFC107 !important;
+            text-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+            margin: 10px 0 !important;
         }
 
         #center-control {
@@ -234,45 +565,76 @@
             background: #2196F3;
             border: none;
             color: white;
-            font-size: 18px;
+            font-size: 24px;
+            font-weight: bold;
             cursor: pointer;
-            position: relative;
             transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(33, 150, 243, 0.4);
+            position: relative;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        .voice-button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 120%;
+            height: 120%;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%);
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .voice-button:hover::before {
+            opacity: 1;
         }
 
         .voice-button:hover {
-            background: #1976D2;
+
+            transform: scale(1.05);
+            box-shadow: 0 6px 25px rgba(33, 150, 243, 0.6);
         }
 
         .voice-button.active {
             background: #f44336;
+            box-shadow: 0 4px 20px rgba(244, 67, 54, 0.6);
+        }
+
+        .voice-button.active .pulse-ring {
+            animation: pulse 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
         }
 
         .pulse-ring {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 100%;
-            height: 100%;
+            top: -1px;
+            left: -1px;
+            right: -1px;
+            bottom: -1px;
             border-radius: 50%;
-            animation: none;
-        }
-
-        .voice-button.active .pulse-ring {
-            animation: pulse 2s infinite;
+            border: 2px solid rgba(255,255,255,0.5);
+            opacity: 0;
         }
 
         @keyframes pulse {
             0% {
-                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
-            }
-            70% {
-                box-shadow: 0 0 0 40px rgba(33, 150, 243, 0);
+                transform: scale(1);
+                opacity: 0.8;
             }
             100% {
-                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0);
+                transform: scale(1.3);
+                opacity: 0;
             }
+        }
+
+
+
+        .voice-button.active {
+            position: relative;
+            z-index: 1;
+            backdrop-filter: blur(5px);
         }
 
         body {

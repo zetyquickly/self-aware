@@ -42,6 +42,10 @@ def handle_video_frame(frame_data):
         logger.error(f"Error processing video frame: {str(e)}")
 
 # Audio WebSocket handlers
+# Store last transcription time
+last_transcription_time = 0
+MIN_TRANSCRIPTION_INTERVAL = 2.0  # Minimum seconds between transcriptions
+
 @socketio.on('audio_data')
 def handle_audio_data(audio_data):
     """
@@ -49,11 +53,33 @@ def handle_audio_data(audio_data):
     audio_data: audio data in the agreed format (e.g., base64 encoded audio chunks)
     """
     try:
-        # Process audio data here
-        logger.debug("Received audio data")
+        global last_transcription_time
+        current_time = time.time()
+
         
-        # Echo the audio back to the client (you can modify this based on your needs)
-        emit('audio_response', audio_data)
+        # Only process if enough time has passed since last transcription
+        if current_time - last_transcription_time >= MIN_TRANSCRIPTION_INTERVAL:
+            logger.debug("Processing audio data")
+            last_transcription_time = current_time
+            
+            # Here you would normally do actual audio processing and transcription
+            # For now we'll just send empty messages for testing
+            transcription_data = {
+                'text': "",  # This will be replaced with actual transcription
+                'streaming': False,
+                'streamChange': False
+            }
+            emit('transcription', transcription_data)
+            
+            # AI response placeholder
+            response_data = {
+                'text': "",  # This will be replaced with actual AI response
+                'streaming': True,
+                'streamChange': False
+            }
+            emit('response', response_data)
+            
+            emit('audio_response', audio_data)
 
     except Exception as e:
         logger.error(f"Error processing audio data: {str(e)}")
@@ -62,26 +88,6 @@ def handle_audio_data(audio_data):
 def handle_connect():
     """Handle client connection"""
     logger.info('Client connected')
-    
-    # Start the dummy conversation stream
-    def send_dummy_conversation():
-        import time
-        dummy_conversation = [
-            ('transcription', "Hey, can you help me with my project?"),
-            ('intent', "User is requesting assistance with a project"),
-            ('response', "Of course! I'd be happy to help. What kind of project are you working on?"),
-            ('transcription', "I need to analyze some data"),
-            ('intent', "User needs data analysis assistance"),
-            ('response', "I can definitely help with data analysis. What kind of data are we working with?"),
-        ]
-        
-        for msg_type, text in dummy_conversation:
-            socketio.emit(msg_type, text)
-            time.sleep(1.5)  # Add delay between messages
-            
-    # Run the dummy conversation in a background thread
-    from threading import Thread
-    Thread(target=send_dummy_conversation).start()
 
 @socketio.on('disconnect')
 def handle_disconnect():
