@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self Aware</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div id="container">
+        <div id="conversation-stream">
+            <div id="conversation-content"></div>
+        </div>
+        
+        <div id="center-control">
+            <button id="voiceButton" class="voice-button">
+                <div class="pulse-ring"></div>
+                Start Voice AI
+            </button>
+        </div>
+
+        <div id="video-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <div id="emotion-label">SAD</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let mediaStream = null;
+        let isStreaming = false;
+
+        // Video streaming
+        async function startVideo() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true,
+                    audio: true 
+                });
+                video.srcObject = mediaStream;
+                isStreaming = true;
+                sendVideoFrames();
+                setupAudioStream();
+            } catch (err) {
+                console.error('Error accessing media devices:', err);
+            }
+        }
+
+        function sendVideoFrames() {
+            if (!isStreaming) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            const frame = canvas.toDataURL('image/jpeg');
+            socket.emit('video_frame', frame);
+
+            setTimeout(sendVideoFrames, 100); // Adjust frame rate as needed
+        }
+
+        // Audio streaming
+        function setupAudioStream() {
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(mediaStream);
+            const processor = audioContext.createScriptProcessor(1024, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = function(e) {
+                const audioData = e.inputBuffer.getChannelData(0);
+                // Convert audio data to base64 or appropriate format
+                const audioDataArray = Array.from(audioData);
+                socket.emit('audio_data', audioDataArray);
+            };
+        }
+
+        // Socket.io event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('audio_response', (audioData) => {
+            // Handle incoming audio data
+            console.log('Received audio response');
+        });
+
+        // Voice button handler
+        const voiceButton = document.getElementById('voiceButton');
+        let isVoiceActive = false;
+
+        voiceButton.onclick = () => {
+            isVoiceActive = !isVoiceActive;
+            voiceButton.classList.toggle('active');
+            
+            if (isVoiceActive) {
+                voiceButton.textContent = 'Stop Voice AI';
+                startVideo(); // Start video and audio
+            } else {
+                voiceButton.textContent = 'Start Voice AI';
+                isStreaming = false;
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+            }
+        };
+
+        // Function to add message to conversation stream
+        function addToConversation(text, type) {
+            const conversationContent = document.getElementById('conversation-content');
+            const messageDiv = document.createElement('div');
+            messageDiv.style.padding = '10px';
+            messageDiv.style.borderRadius = '8px';
+            messageDiv.style.maxWidth = '80%';
+            
+            if (type === 'transcription') {
+                messageDiv.style.backgroundColor = '#333';
+                messageDiv.style.alignSelf = 'flex-start';
+            } else if (type === 'response') {
+                messageDiv.style.backgroundColor = '#2196F3';
+                messageDiv.style.alignSelf = 'flex-end';
+            } else if (type === 'intent') {
+                messageDiv.style.backgroundColor = '#4CAF50';
+                messageDiv.style.alignSelf = 'center';
+                messageDiv.style.fontStyle = 'italic';
+            }
+            
+            messageDiv.textContent = text;
+            conversationContent.appendChild(messageDiv);
+            conversationContent.scrollTop = conversationContent.scrollHeight;
+        }
+
+        // Example usage of conversation stream (you'll need to integrate this with your actual audio processing)
+        socket.on('transcription', (text) => {
+            addToConversation(text, 'transcription');
+        });
+
+        socket.on('ai_response', (text) => {
+            addToConversation(text, 'response');
+        });
+
+        socket.on('model_intent', (text) => {
+            addToConversation(text, 'intent');
+        });
+    </script>
+
+    <style>
+        #container {
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            position: relative;
+            background: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+
+        #video-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        #videoElement {
+            width: 100%;
+            border-radius: 12px;
+            border: 2px solid #333;
+        }
+
+        #emotion-label {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            z-index: 1000;
+            width: fit-content;
+            text-align: center;
+            border: 1px solid #444;
+        }
+
+        #video-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            border-radius: 12px;
+            overflow: visible;  /* Changed from hidden to visible */
+            padding-bottom: 50px;  /* Add space for the label */
+        }
+
+        #conversation-stream {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 400px;
+            height: 600px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #conversation-content {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        #center-control {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .voice-button {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: #2196F3;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .voice-button:hover {
+            background: #1976D2;
+        }
+
+        .voice-button.active {
+            background: #f44336;
+        }
+
+        .pulse-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            animation: none;
+        }
+
+        .voice-button.active .pulse-ring {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 40px rgba(33, 150, 243, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(33, 150, 243, 0);
+            }
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+        }
+    </style>
+</body>
+</html>
+
