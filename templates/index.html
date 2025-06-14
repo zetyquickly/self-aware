@@ -10,7 +10,7 @@
 <body>
     <div id="container">
         <div id="header-text">
-            This AI is not on the spectrum. It can actually read the room!
+            This AI is self-aware. It can read the room and adjust accordingly!
         </div>
         <div id="conversation-stream">
             <div id="conversation-content"></div>
@@ -287,7 +287,7 @@
             const colors = {
                 'happy': '#4CAF50',
                 'sad': '#2196F3',
-                'angry': '#F44336',
+                'angry': '#FF0000',
                 'neutral': '#9E9E9E'
             };
             return colors[emotion.toLowerCase()] || '#2196F3';
@@ -346,7 +346,12 @@
 
         .emotion-icon.happy { color: #4CAF50; }
         .emotion-icon.sad { color: #2196F3; }
-        .emotion-icon.angry { color: #F44336; }
+        .emotion-icon.angry { color: #FF0000; animation: angerIconPulse 1s infinite; }
+
+        @keyframes angerIconPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.7; }
+        }
         .emotion-icon.neutral { color: #9E9E9E; }
 
         @keyframes pulseIcon {
@@ -557,8 +562,26 @@
         }
 
         #emotion-label.angry {
-            background: rgba(244, 67, 54, 0.9);
-            border-color: #E57373;
+            background: rgba(244, 67, 54, 0.9) !important;
+            border-color: #FF4444 !important;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5) !important;
+            animation: angerPulse 1.5s infinite;
+            color: #ffffff !important;
+        }
+
+        @keyframes angerPulse {
+            0% {
+                transform: translateX(-50%) scale(1);
+                background: rgba(255, 0, 0, 0.9);
+            }
+            50% {
+                transform: translateX(-50%) scale(1.05);
+                background: rgba(255, 0, 0, 1);
+            }
+            100% {
+                transform: translateX(-50%) scale(1);
+                background: rgba(255, 0, 0, 0.9);
+            }
         }
 
         #emotion-label.neutral {
