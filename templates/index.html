@@ -144,6 +144,9 @@
             isVoiceActive = !isVoiceActive;
             voiceButton.classList.toggle('active');
             
+            // Emit button event to server for emotion tracking
+            socket.emit('button_event', { pressed: isVoiceActive });
+            
             if (isVoiceActive) {
                 voiceButton.textContent = 'Stop';
                 startVideo(); // Start video and audio

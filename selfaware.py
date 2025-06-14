@@ -21,6 +21,11 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Emotion server configuration
 EMOTION_SERVER_URL = "http://localhost:5139"
 EMOTION_SERVER_TIMEOUT = 5  # seconds
+EMOTION_TYPES = ("anger","contempt","disgust","fear","happy","neutral","sad","surprise")
+
+# Add these new global variables
+button_pressed = False
+current_session_emotions = []
 
 @app.route('/')
 def index():
@@ -78,7 +83,7 @@ def handle_video_frame(frame_data):
     frame_data: base64 encoded image data
     """
     try:
-        global last_emotion_request
+        global last_emotion_request, button_pressed, current_session_emotions
         current_time = time.time()
         
         # Rate limit emotion processing
@@ -101,6 +106,13 @@ def handle_video_frame(frame_data):
         
         # Process emotion directly with base64 data
         emotion = process_emotion(encoded_data)
+        
+        # Store emotion if button is pressed
+        if button_pressed:
+            current_session_emotions.append({
+                'emotion': emotion,
+                'timestamp': current_time
+            })
         
         # Emit emotion update
         emit('emotion_update', emotion)
@@ -149,6 +161,32 @@ def handle_audio_data(audio_data):
 
     except Exception as e:
         logger.error(f"Error processing audio data: {str(e)}")
+
+@socketio.on('button_event')
+def handle_button_event(data):
+    """
+    Handle button press/release events
+    data: dictionary containing button state {'pressed': bool}
+    """
+    try:
+        global button_pressed, current_session_emotions
+        
+        # Update button state
+        button_pressed = data.get('pressed', False)
+        
+        if button_pressed:
+            # Button just pressed - start new session
+            current_session_emotions = []
+            logger.info("Started new emotion recording session")
+        else:
+            # Button released - log collected emotions
+            logger.info("Emotion recording session ended")
+            logger.info(f"Collected emotions: {json.dumps(current_session_emotions, indent=2)}")
+            # Clear the list after logging
+            current_session_emotions = []
+            
+    except Exception as e:
+        logger.error(f"Error handling button event: {str(e)}")
 
 @socketio.on('connect')
 def handle_connect():
