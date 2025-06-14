@@ -9,6 +9,9 @@
 </head>
 <body>
     <div id="container">
+        <div id="header-text">
+            This AI is not on the spectrum. It won't bore you with quantum neural net backpropagation if you look zoned out!
+        </div>
         <div id="conversation-stream">
             <div id="conversation-content"></div>
         </div>
@@ -369,6 +372,87 @@
             background: #1a1a1a;
             color: white;
             overflow: hidden;
+        }
+
+        #header-text {
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 32px;
+            font-weight: bold;
+            color: white;
+            text-align: center;
+            max-width: 90%;
+            padding: 25px 40px;
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.3), rgba(156, 39, 176, 0.3));
+            border-radius: 25px;
+            z-index: 1000;
+            box-shadow: 
+                0 4px 25px rgba(33, 150, 243, 0.3),
+                0 8px 40px rgba(0, 0, 0, 0.4),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            animation: fadeIn 1.2s ease-out, glowPulse 3s infinite;
+            text-shadow: 
+                0 0 20px rgba(33, 150, 243, 0.5),
+                0 0 40px rgba(33, 150, 243, 0.3);
+            letter-spacing: 0.5px;
+            line-height: 1.4;
+        }
+
+        #header-text::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.5), rgba(156, 39, 176, 0.5));
+            border-radius: 27px;
+            z-index: -1;
+            filter: blur(15px);
+            opacity: 0.5;
+            animation: borderGlow 3s infinite alternate;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -30px);
+                filter: blur(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes glowPulse {
+            0%, 100% {
+                box-shadow: 
+                    0 4px 25px rgba(33, 150, 243, 0.3),
+                    0 8px 40px rgba(0, 0, 0, 0.4),
+                    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            }
+            50% {
+                box-shadow: 
+                    0 4px 30px rgba(33, 150, 243, 0.4),
+                    0 8px 50px rgba(0, 0, 0, 0.5),
+                    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        @keyframes borderGlow {
+            0% {
+                opacity: 0.3;
+                filter: blur(15px);
+            }
+            100% {
+                opacity: 0.6;
+                filter: blur(20px);
+            }
         }
 
         #video-container {
