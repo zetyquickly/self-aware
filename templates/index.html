@@ -136,11 +136,202 @@
             console.log('Received audio response');
         });
 
-        // Voice button handler
+        // Voice button handler - Updated for push-to-talk with Node.js backend
         const voiceButton = document.getElementById('voiceButton');
         let isVoiceActive = false;
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let sessionId = `session_${Date.now()}`;
+        let backendWs = null;
+        let audioContext = null;
+        let audioQueue = [];
+        let isPlayingAudio = false;
 
-        voiceButton.onclick = () => {
+        // Initialize WebSocket connection to Node.js backend
+        function initBackendWebSocket() {
+            try {
+                backendWs = new WebSocket('ws://localhost:3001');
+                
+                backendWs.onopen = () => {
+                    console.log('Connected to Node.js backend');
+                    backendWs.send(JSON.stringify({ type: 'init', sessionId: sessionId }));
+                };
+
+                backendWs.onmessage = async (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    switch (data.type) {
+                        case 'session_created':
+                            console.log('Backend session created:', data.sessionId);
+                            break;
+                            
+                        case 'transcription':
+                            addToConversation(data.text, 'transcription');
+                            break;
+                            
+                        case 'response_chunk':
+                            addToConversation(data.fullText || data.text, 'response', true, false);
+                            break;
+                            
+                        case 'audio_chunk':
+                            // Queue audio for playback
+                            const audioData = base64ToArrayBuffer(data.audio);
+                            audioQueue.push(audioData);
+                            if (!isPlayingAudio) {
+                                playNextAudioChunk();
+                            }
+                            break;
+                    }
+                };
+
+                backendWs.onclose = () => {
+                    console.log('Backend WebSocket closed');
+                };
+
+                backendWs.onerror = (error) => {
+                    console.error('Backend WebSocket error:', error);
+                };
+            } catch (error) {
+                console.error('Failed to connect to backend WebSocket:', error);
+            }
+        }
+
+        // Audio playback functions
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        async function playNextAudioChunk() {
+            if (audioQueue.length === 0) {
+                isPlayingAudio = false;
+                return;
+            }
+
+            isPlayingAudio = true;
+            
+            if (!audioContext) {
+                audioContext = new AudioContext();
+            }
+
+            const audioData = audioQueue.shift();
+            
+            try {
+                const audioBuffer = await audioContext.decodeAudioData(audioData);
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                
+                source.onended = () => {
+                    playNextAudioChunk();
+                };
+                
+                source.start();
+            } catch (error) {
+                console.error('Error playing audio:', error);
+                playNextAudioChunk();
+            }
+        }
+
+        // Recording functions
+        async function startRecording() {
+            try {
+                // Clear any pending audio queue
+                audioQueue = [];
+                isPlayingAudio = false;
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    await sendAudioToBackend(audioBlob);
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                voiceButton.textContent = 'Recording...';
+            } catch (error) {
+                console.error('Error starting recording:', error);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                voiceButton.textContent = 'Hold to Talk';
+            }
+        }
+
+        async function sendAudioToBackend(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('sessionId', sessionId);
+
+            try {
+                const response = await fetch('/api/audio/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to process audio');
+                }
+            } catch (error) {
+                console.error('Error sending audio:', error);
+            }
+        }
+
+        // Voice button event handlers - Push to talk
+        voiceButton.onmousedown = () => {
+            if (!isVoiceActive) return;
+            startRecording();
+        };
+
+        voiceButton.onmouseup = () => {
+            if (!isVoiceActive) return;
+            stopRecording();
+        };
+
+        voiceButton.onmouseleave = () => {
+            if (!isVoiceActive) return;
+            stopRecording();
+        };
+
+        // Touch events for mobile
+        voiceButton.ontouchstart = (e) => {
+            e.preventDefault();
+            if (!isVoiceActive) return;
+            startRecording();
+        };
+
+        voiceButton.ontouchend = (e) => {
+            e.preventDefault();
+            if (!isVoiceActive) return;
+            stopRecording();
+        };
+
+        // Main activation button
+        voiceButton.onclick = (e) => {
+            // Prevent the click from interfering with mouse down/up
+            if (e.detail === 0) return; // Ignore programmatic clicks
+            
             isVoiceActive = !isVoiceActive;
             voiceButton.classList.toggle('active');
             
@@ -148,13 +339,20 @@
             socket.emit('button_event', { pressed: isVoiceActive });
             
             if (isVoiceActive) {
-                voiceButton.textContent = 'Stop';
+                voiceButton.textContent = 'Hold to Talk';
                 startVideo(); // Start video and audio
+                initBackendWebSocket(); // Connect to backend
             } else {
                 voiceButton.textContent = 'Start';
                 isStreaming = false;
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(track => track.stop());
+                }
+                if (backendWs) {
+                    backendWs.close();
+                }
+                if (isRecording) {
+                    stopRecording();
                 }
             }
         };
@@ -317,6 +515,14 @@
                 setTimeout(() => {
                     currentResponseDiv.style.backgroundColor = '#2196F3';
                 }, 1000);
+            }
+
+            // Forward emotion to Node.js backend if connected
+            if (backendWs && backendWs.readyState === WebSocket.OPEN) {
+                backendWs.send(JSON.stringify({ 
+                    type: 'emotion_update', 
+                    emotion: lowerEmotion 
+                }));
             }
         });
     </script>

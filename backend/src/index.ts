@@ -14,7 +14,7 @@ const wss = new WebSocketServer({ server });
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5001',
   credentials: true
 }));
 app.use(express.json());
@@ -34,5 +34,6 @@ setupWebSocket(wss);
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Node.js backend server running on port ${PORT}`);
+  console.log(`CORS origin: ${process.env.CORS_ORIGIN || 'http://localhost:5001'}`);
 }); 

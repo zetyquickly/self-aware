@@ -1,85 +1,206 @@
-# Self Aware
+# Self-Aware AI
 
-A Flask application that handles real-time video and audio streaming through WebSocket connections.
-
-## Prerequisites
-
-- Python 3.8 or higher
-- uv package manager
-
-## Installation
-
-1. First, install uv if you haven't already:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-2. Create a new virtual environment and activate it:
-```bash
-uv venv
-source .venv/bin/activate  # On Unix/macOS
-# or
-.venv\Scripts\activate  # On Windows
-```
-
-3. Install dependencies using uv:
-```bash
-uv pip install flask flask-socketio opencv-python numpy
-```
-
-## Project Structure
-
-```
-.
-├── README.md
-├── selfaware.py
-└── templates
-    └── index.html
-```
-
-## Running the Application
-
-1. Make sure your virtual environment is activated
-2. Run the Flask application:
-```bash
-python selfaware.py
-```
-3. Open your web browser and navigate to:
-```
-http://localhost:5000
-```
-
-## Usage
-
-1. When you open the application in your browser, you'll be prompted to allow camera and microphone access
-2. Click the "Start" button to begin streaming video and audio
-3. Click the "Stop" button to stop the streams
+An AI assistant that can read emotions from video and respond with voice using advanced speech processing.
 
 ## Features
 
-- Real-time video streaming from browser to server
-- Bidirectional audio communication
-- WebSocket-based communication for low latency
-- Basic video and audio processing capabilities
+- **Real-time Emotion Detection**: Uses computer vision to detect emotions from video feed
+- **Voice Processing**: Complete audio pipeline with speech-to-text, AI response generation, and text-to-speech
+- **Streaming Responses**: Real-time AI responses that adapt to detected emotions
+- **Push-to-Talk Interface**: Hold button to record, release to process
+- **Visual Feedback**: Live emotion display and conversation stream
 
-## Development
+## Architecture
 
-The main components of the application are:
+The application consists of two integrated servers:
 
-- `selfaware.py`: The main Flask application with WebSocket handlers
-- `templates/index.html`: The frontend interface with video/audio capture and streaming logic
+1. **Flask Frontend** (Port 5001): Handles video processing, emotion detection, and UI
+2. **Node.js Backend** (Port 3001): Processes audio with STT, LLM, and TTS services
 
-To modify video processing, edit the `handle_video_frame` function in `selfaware.py`.
-To modify audio processing, edit the `handle_audio_data` function in `selfaware.py`.
+### Audio Processing Pipeline
+
+1. **Audio Recording** → WebM audio capture
+2. **Speech-to-Text** → Deepgram STT API
+3. **AI Response** → Inflection AI streaming responses
+4. **Text-to-Speech** → Resemble AI voice synthesis
+5. **Audio Playback** → Real-time audio streaming
+
+## Setup
+
+### Prerequisites
+
+- Python 3.8+
+- Node.js 16+
+- npm or yarn
+
+### API Keys Required
+
+You'll need API keys for:
+- **Deepgram**: Speech-to-text processing
+- **Inflection AI**: LLM responses  
+- **Resemble AI**: Text-to-speech synthesis
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd self-aware-real
+   ```
+
+2. **Install Python dependencies**
+   ```bash
+   pip install flask flask-socketio requests opencv-python numpy
+   ```
+
+3. **Install Node.js dependencies**
+   ```bash
+   cd backend
+   npm install
+   cd ..
+   ```
+
+4. **Configure API Keys**
+   ```bash
+   # Copy the example environment file
+   cp backend/env.example backend/.env
+   
+   # Edit backend/.env with your API keys:
+   # DEEPGRAM_API_KEY=your_key_here
+   # INFLECTION_API_KEY=your_key_here  
+   # RESEMBLE_API_KEY=your_key_here
+   # RESEMBLE_PROJECT_UUID=your_uuid_here
+   # RESEMBLE_VOICE_UUID=your_voice_uuid_here
+   ```
+
+## Running the Application
+
+### Quick Start
+```bash
+./start.sh
+```
+
+This will start both servers automatically:
+- Frontend: http://localhost:5001
+- Backend: http://localhost:3001
+
+### Manual Start
+
+If you prefer to run servers separately:
+
+1. **Start the Node.js backend**:
+   ```bash
+   cd backend
+   npm run dev
+   ```
+
+2. **Start the Flask frontend** (in another terminal):
+   ```bash
+   python3 selfaware.py
+   ```
+
+## Usage
+
+1. **Open your browser** to http://localhost:5001
+2. **Click "Start"** to activate the system
+3. **Allow camera and microphone** permissions
+4. **Hold the button** to record your voice
+5. **Release the button** to process and get AI response
+6. **Watch the emotion detection** update in real-time
+
+## Features in Detail
+
+### Emotion Detection
+- Real-time facial emotion recognition
+- Visual emotion indicator with color coding
+- Emotion data forwarded to AI for context-aware responses
+
+### Voice Processing
+- Push-to-talk recording interface
+- High-quality speech-to-text transcription
+- Streaming AI responses with emotion awareness
+- Natural voice synthesis and playback
+
+### Integration Benefits
+- **Minimal UI Changes**: Existing interface preserved
+- **Enhanced Functionality**: Full voice processing pipeline
+- **Real-time Processing**: Streaming responses and audio
+- **Emotion Context**: AI responses adapt to detected emotions
+
+## API Endpoints
+
+### Flask Frontend
+- `GET /`: Main application interface
+- `POST /api/audio/process`: Proxy to Node.js backend for audio processing
+
+### Node.js Backend  
+- `POST /api/audio/process`: Process uploaded audio files
+- `GET /health`: Backend health check
+- `WebSocket /`: Real-time communication for streaming responses
+
+## Configuration
+
+### Environment Variables (backend/.env)
+```env
+# Required API Keys
+DEEPGRAM_API_KEY=your_deepgram_key
+INFLECTION_API_KEY=your_inflection_key
+RESEMBLE_API_KEY=your_resemble_key
+RESEMBLE_PROJECT_UUID=your_project_uuid
+RESEMBLE_VOICE_UUID=your_voice_uuid
+
+# Server Configuration
+PORT=3001
+CORS_ORIGIN=http://localhost:5001
+
+# Optional Deepgram Settings
+DEEPGRAM_MODEL=nova-2
+DEEPGRAM_LANGUAGE=en-US
+```
 
 ## Troubleshooting
 
-If you encounter any issues:
+### Common Issues
 
-1. Make sure all dependencies are properly installed
-2. Check that your browser supports WebRTC
-3. Allow camera and microphone permissions in your browser
-4. Check the console logs in both browser and server for error messages
+1. **Backend connection failed**: Ensure Node.js backend is running on port 3001
+2. **Audio not working**: Check microphone permissions and API keys
+3. **Emotion detection not working**: Ensure camera permissions and emotion server is running
+4. **API errors**: Verify all API keys are correctly set in backend/.env
+
+### Logs
+
+- Backend logs: Check terminal output from Node.js server
+- Frontend logs: Check browser console for client-side errors
+- Audio processing logs: Located in `backend/logs/` directory
+
+## Development
+
+### Project Structure
+```
+self-aware-real/
+├── selfaware.py          # Flask frontend server
+├── templates/
+│   └── index.html        # Main UI template
+├── backend/              # Node.js backend
+│   ├── src/
+│   │   ├── index.ts      # Backend server entry
+│   │   ├── websocket.ts  # WebSocket handling
+│   │   └── services/     # Audio processing services
+│   └── package.json
+├── start.sh              # Startup script
+└── README.md
+```
+
+### Adding Features
+
+The integration is designed to be minimal and extensible:
+- Add new API endpoints in Flask for additional features
+- Extend Node.js backend for new audio processing capabilities
+- Modify HTML template for UI enhancements
+- Use WebSocket communication for real-time features
 
 ## License
+
+[Add your license information here]
 
 
