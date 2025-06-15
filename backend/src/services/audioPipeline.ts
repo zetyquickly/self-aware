@@ -696,37 +696,13 @@ async function generateTTSForSentence(
       prosodyAttributes = [`rate="${speechRate}"`];
     }
     
-    // Process the sentence for natural pauses and emphasis
-    let processedSentence = sentence;
-    
-    // Add pauses after commas (if not already followed by a space and quote)
-    processedSentence = processedSentence.replace(/,(?!\s["'])/g, ',<break time="300ms"/>');
-    
-    // Add longer pauses for ellipsis
-    processedSentence = processedSentence.replace(/\.\.\./g, '<break time="800ms"/>');
-    
-    // Add pauses before "but" or "however" for natural flow
-    processedSentence = processedSentence.replace(/(\s)(but|however)(\s)/gi, '$1<break time="200ms"/>$2$3');
-    
-    // Emphasize words in ALL CAPS
-    processedSentence = processedSentence.replace(/\b([A-Z]{2,})\b/g, '<emphasis level="strong">$1</emphasis>');
-    
-    // Handle questions with rising intonation
-    if (processedSentence.endsWith('?')) {
-      // Questions often have rising pitch at the end
-      const lastWord = processedSentence.match(/(\w+)\?$/);
-      if (lastWord) {
-        processedSentence = processedSentence.replace(/(\w+)\?$/, '<prosody pitch="high">$1</prosody>?');
-      }
-    }
-    
     // Wrap the sentence in SSML with emotion prompt and prosody
     const prosodyTag = prosodyAttributes.length > 0 
       ? `<prosody ${prosodyAttributes.join(' ')}>` 
       : '';
     const closeProsody = prosodyTag ? '</prosody>' : '';
     
-    const ssmlData = `<speak prompt="${emotionPrompt}" temperature="0.8" exaggeration="0.7">${prosodyTag}${processedSentence}${closeProsody}</speak>`;
+    const ssmlData = `<speak prompt="${emotionPrompt}" temperature="0.8" exaggeration="0.7">${prosodyTag}${sentence}${closeProsody}</speak>`;
     console.log('🎤 SSML:', ssmlData);
     console.log('📊 Speech settings:', { rate: speechRate, pitch, volume });
     
