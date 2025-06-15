@@ -548,7 +548,8 @@ export function VoiceAssistant() {
       reassuring: '#BA68C8',  // Soft purple - comforting
       explanatory: '#4FC3F7', // Light cyan - clear
       understanding: '#A1887F', // Warm brown - accepting
-      friendly: '#66BB6A'     // Medium green - approachable
+      friendly: '#66BB6A',    // Medium green - approachable
+      assertive: '#FF7043'    // Orange-red - firm but controlled
     };
     return colors[emotion] || '#9E9E9E';
   };

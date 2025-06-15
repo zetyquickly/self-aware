@@ -361,7 +361,7 @@ ${(() => {
     if (secondary && topEmotions[1].percentage > 30) {
       // Significant secondary emotion
       if (primary === 'angry' && secondary === 'sad') {
-        return `User is FRUSTRATED and HURT. Acknowledge both feelings briefly. Be gentle but direct.`;
+        return `User is FRUSTRATED and HURT. Show understanding but don't be a pushover. "I get that you're hurt AND angry, but let's be real here..."`;
       } else if (primary === 'happy' && secondary === 'surprised') {
         return `User is DELIGHTED! Share their excitement briefly.`;
       } else if (primary === 'sad' && secondary === 'angry') {
@@ -371,10 +371,20 @@ ${(() => {
       }
     }
     
+    // Check if the message contains hostile language
+    const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
+    const isHostileMessage = hostileWords.some(word => 
+      prompt.toLowerCase().includes(word)
+    );
+    
     // Single dominant emotion
     switch (primary) {
       case 'angry':
-        return `User is ANGRY. Acknowledge briefly ("I see you're frustrated") then address their concern.`;
+        if (isHostileMessage) {
+          return `User is ANGRY and using HOSTILE LANGUAGE. Match their energy with controlled assertiveness. Be direct: "Look, I understand you're upset, but..." Show some frustration back. Don't be overly calm.`;
+        } else {
+          return `User LOOKS ANGRY but their words are civil. Be understanding but professional. "I can see you're frustrated. What's bothering you?"`;
+        }
       case 'sad':
         return `User is SAD. Show brief empathy then offer help.`;
       case 'happy':
@@ -469,9 +479,15 @@ REMEMBER: Keep it SHORT. Address emotions naturally without over-analyzing.`
                    const dominantEmotion = Object.entries(emotionCounts)
                      .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
                    
+                   // Check if message is hostile
+                   const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
+                   const isHostile = hostileWords.some(word => 
+                     prompt.toLowerCase().includes(word)
+                   );
+                   
                    // Map user emotion to AI tone
                    const toneMap: Record<string, string> = {
-                     'angry': 'calm',
+                     'angry': isHostile ? 'assertive' : 'calm',
                      'sad': 'empathetic',
                      'happy': 'cheerful',
                      'fearful': 'reassuring',
@@ -596,8 +612,7 @@ async function generateTTSForSentence(
     initResemble();
     
     // Determine TTS emotion/style based on user's emotions
-    let ttsEmotion = 'neutral';
-    let speechRate = 1.0;
+    let emotionPrompt = 'Speak in a neutral, conversational tone';
     
     if (session) {
       // Get dominant emotion from recording (what user felt while speaking)
@@ -610,69 +625,96 @@ async function generateTTSForSentence(
       const dominantEmotion = Object.entries(emotionCounts)
         .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
       
-      // Map user emotions to appropriate TTS response style - MORE PRONOUNCED
+      // Get the last user message to check for hostility
+      const lastUserMessage = session.conversationHistory
+        .filter(msg => msg.role === 'user')
+        .pop()?.content || '';
+      
+      const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
+      const isHostileMessage = hostileWords.some(word => 
+        lastUserMessage.toLowerCase().includes(word)
+      );
+      
+      // Map user emotions to appropriate TTS response prompts
       switch (dominantEmotion) {
         case 'angry':
-          ttsEmotion = 'calm'; // Respond calmly to anger
-          speechRate = 0.8; // Much slower - very calming
-          console.log('🎭 TTS: ANGRY user → Speaking SLOWLY and CALMLY');
+          if (isHostileMessage) {
+            emotionPrompt = 'Speak with controlled frustration and assertiveness. Show some irritation in your voice, but remain professional. Be direct and firm.';
+            console.log('🎭 TTS: ANGRY + HOSTILE user → Speaking with CONTROLLED ANGER');
+          } else {
+            emotionPrompt = 'Speak in a calm, understanding tone. Be patient and professional, acknowledging their frustration without matching it.';
+            console.log('🎭 TTS: ANGRY (but civil) user → Speaking CALMLY');
+          }
           break;
         case 'sad':
-          ttsEmotion = 'empathetic'; // Warm and understanding
-          speechRate = 0.85; // Slower, gentler
-          console.log('🎭 TTS: SAD user → Speaking GENTLY and WARMLY');
+          emotionPrompt = 'Speak with warm empathy and compassion. Use a gentle, comforting tone like a caring friend.';
+          console.log('🎭 TTS: SAD user → Speaking WARMLY and EMPATHETICALLY');
           break;
         case 'happy':
-          ttsEmotion = 'cheerful'; // Match their energy
-          speechRate = 1.15; // Faster, more energetic
+          emotionPrompt = 'Speak with enthusiasm and energy! Match their excitement with an upbeat, cheerful tone.';
           console.log('🎭 TTS: HAPPY user → Speaking ENTHUSIASTICALLY!');
           break;
         case 'fearful':
-          ttsEmotion = 'reassuring'; // Comforting tone
-          speechRate = 0.85; // Slower, more reassuring
+          emotionPrompt = 'Speak in a reassuring, confident, and steady voice. Be calming and supportive.';
           console.log('🎭 TTS: FEARFUL user → Speaking REASSURINGLY');
           break;
         case 'surprised':
-          ttsEmotion = 'conversational'; // Natural explanation
-          speechRate = 0.95; // Slightly slower for clarity
+          emotionPrompt = 'Speak clearly and informatively, with a slightly measured pace to help them process.';
           console.log('🎭 TTS: SURPRISED user → Speaking CLEARLY');
           break;
         case 'disgusted':
-          ttsEmotion = 'understanding'; // Non-judgmental
-          speechRate = 0.9; // Slower, respectful
+          emotionPrompt = 'Speak with understanding and respect. Use a neutral, non-judgmental tone.';
           console.log('🎭 TTS: DISGUSTED user → Speaking RESPECTFULLY');
           break;
         default:
-          ttsEmotion = 'neutral';
-          speechRate = 1.0;
+          emotionPrompt = 'Speak in a friendly, conversational tone';
       }
     }
     
-    // Generate audio with Resemble with emotion parameters
-    // Note: Adjust based on actual Resemble API capabilities
+    // Wrap the sentence in SSML with emotion prompt
+    const ssmlData = `<speak prompt="${emotionPrompt}">${sentence}</speak>`;
+    console.log('🎤 SSML:', ssmlData);
+    
+    // Use Resemble SDK with SSML body
+    console.log('📤 Sending to Resemble API...');
+    console.log('Project UUID:', process.env.RESEMBLE_PROJECT_UUID);
+    console.log('Voice UUID:', process.env.RESEMBLE_VOICE_UUID);
+    
     const response = await Resemble.Resemble.v2.clips.createSync(
       process.env.RESEMBLE_PROJECT_UUID!,
       {
         voice_uuid: process.env.RESEMBLE_VOICE_UUID!,
-        body: sentence,
-        is_archived: false,
-        // Add emotion/style parameters if supported by your Resemble voice
-        // emotion: ttsEmotion,
-        // speech_rate: speechRate,
-        // Note: These parameters depend on your Resemble voice capabilities
+        body: ssmlData, // Pass SSML as the body
+        is_archived: false
       }
     );
+
+    console.log('📥 Resemble API Response:', JSON.stringify(response, null, 2));
 
     // Check if response is successful and send audio to client
     if (session?.ws && 'success' in response && response.success && 'item' in response && response.item) {
       const audioUrl = response.item.audio_src;
+      console.log('🎵 Audio URL:', audioUrl);
       
       if (audioUrl) {
         try {
           // Fetch the audio data
+          console.log('📡 Fetching audio from URL...');
           const audioResponse = await axios.get(audioUrl, {
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer',
+            headers: {
+              'Accept': 'audio/wav, audio/mpeg, audio/*'
+            }
           });
+          
+          console.log('✅ Audio fetched successfully');
+          console.log('Audio content-type:', audioResponse.headers['content-type']);
+          console.log('Audio size:', audioResponse.data.byteLength, 'bytes');
+          
+          // Log first few bytes to check format
+          const firstBytes = Buffer.from(audioResponse.data).slice(0, 4);
+          console.log('First 4 bytes (hex):', firstBytes.toString('hex'));
+          console.log('First 4 bytes (ascii):', firstBytes.toString('ascii'));
           
           // Send audio chunk to client
           session.ws.send(JSON.stringify({
@@ -685,15 +727,87 @@ async function generateTTSForSentence(
             type: 'audio_complete',
             timestamp: new Date().toISOString()
           }));
-        } catch (fetchError) {
-          console.error('Error fetching audio:', fetchError);
+        } catch (fetchError: any) {
+          console.error('❌ Error fetching audio:', fetchError);
+          console.error('Error details:', {
+            message: fetchError.message,
+            code: fetchError.code,
+            response: fetchError.response?.status,
+            responseData: fetchError.response?.data
+          });
+          throw fetchError;
         }
+      } else {
+        console.error('❌ No audio URL in response');
       }
     } else {
-      console.error('Resemble API error:', response);
+      console.error('❌ Resemble API error - Invalid response structure');
+      console.error('Response details:', {
+        hasSuccess: 'success' in response,
+        success: (response as any).success,
+        hasItem: 'item' in response,
+        item: (response as any).item,
+        fullResponse: response
+      });
+      
+      // Check for error details in response
+      if ('error' in response) {
+        console.error('API Error:', (response as any).error);
+      }
+      if ('message' in response) {
+        console.error('API Message:', (response as any).message);
+      }
+      if ('errors' in response) {
+        console.error('API Errors:', (response as any).errors);
+      }
+      
+      throw new Error('Failed to generate audio with SSML');
     }
   } catch (error) {
     console.error('Resemble TTS error:', error);
+    
+    // Fallback to the old API if SSML fails
+    try {
+      console.log('Falling back to standard TTS API...');
+      const response = await Resemble.Resemble.v2.clips.createSync(
+        process.env.RESEMBLE_PROJECT_UUID!,
+        {
+          voice_uuid: process.env.RESEMBLE_VOICE_UUID!,
+          body: sentence,
+          is_archived: false
+        }
+      );
+
+      // Check if response is successful and send audio to client
+      if (session?.ws && 'success' in response && response.success && 'item' in response && response.item) {
+        const audioUrl = response.item.audio_src;
+        
+        if (audioUrl) {
+          try {
+            // Fetch the audio data
+            const audioResponse = await axios.get(audioUrl, {
+              responseType: 'arraybuffer'
+            });
+            
+            // Send audio chunk to client
+            session.ws.send(JSON.stringify({
+              type: 'audio_chunk',
+              audio: Buffer.from(audioResponse.data).toString('base64'),
+              timestamp: new Date().toISOString()
+            }));
+            
+            session.ws.send(JSON.stringify({
+              type: 'audio_complete',
+              timestamp: new Date().toISOString()
+            }));
+          } catch (fetchError) {
+            console.error('Error fetching audio:', fetchError);
+          }
+        }
+      }
+    } catch (fallbackError) {
+      console.error('Fallback TTS also failed:', fallbackError);
+    }
   }
 }
 
