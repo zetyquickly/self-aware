@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from pathlib import Path
 import numpy as np
 import base64
@@ -17,6 +18,7 @@ from utils.general import check_img_size, non_max_suppression, scale_coords, set
 from utils.torch_utils import select_device
 
 app = Flask(__name__)
+CORS(app, origins="*")  # Allow all origins
 
 # Global variables for models
 face_model = None
