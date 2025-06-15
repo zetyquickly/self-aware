@@ -12,9 +12,9 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Middleware
+// Middleware - Allow all origins for development
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5001',
+  origin: true, // Allow all origins
   credentials: true
 }));
 app.use(express.json());

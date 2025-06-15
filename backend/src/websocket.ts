@@ -65,23 +65,40 @@ async function processVideoFrame(frameData: string, sessionId: string): Promise<
       
       // Update session emotion
       const session = activeSessions.get(sessionId);
-      if (session && session.emotion !== mappedEmotion) {
-        session.emotion = mappedEmotion as any;
-        session.emotionHistory.push({ 
-          emotion: mappedEmotion as any, 
-          timestamp: Date.now() 
-        });
+      if (session) {
+        const timestamp = Date.now();
         
-        // Keep only last 10 emotions
-        if (session.emotionHistory.length > 10) {
-          session.emotionHistory = session.emotionHistory.slice(-10);
+        // Always update current emotion and history
+        if (session.emotion !== mappedEmotion) {
+          session.emotion = mappedEmotion as any;
+          
+          session.emotionHistory.push({ 
+            emotion: mappedEmotion as any, 
+            timestamp 
+          });
+          
+          // Keep only last 10 emotions
+          if (session.emotionHistory.length > 10) {
+            session.emotionHistory = session.emotionHistory.slice(-10);
+          }
+          
+          console.log(`🎭 Emotion updated: ${mappedEmotion} (recording: ${session.isRecording})`);
+          
+          // Send emotion update to client
+          session.ws.send(JSON.stringify({
+            type: 'emotion_update',
+            emotion: mappedEmotion
+          }));
         }
         
-        // Send emotion update to client
-        session.ws.send(JSON.stringify({
-          type: 'emotion_update',
-          emotion: mappedEmotion
-        }));
+        // If recording, also store in recording emotions (even if same emotion)
+        if (session.isRecording) {
+          session.recordingEmotions.push({
+            emotion: mappedEmotion as any,
+            timestamp
+          });
+          console.log(`📹 Recording emotion: ${mappedEmotion} (total during recording: ${session.recordingEmotions.length})`);
+        }
       }
     }
   } catch (error) {
@@ -115,6 +132,8 @@ export function setupWebSocket(wss: WebSocketServer) {
                 emotion: 'neutral',
                 emotionHistory: [{ emotion: 'neutral', timestamp: Date.now() }],
                 conversationHistory: [],
+                recordingEmotions: [],
+                isRecording: false,
                 isActive: true
               });
             }
@@ -123,9 +142,33 @@ export function setupWebSocket(wss: WebSocketServer) {
 
           case 'video_frame':
             if (sessionId && data.frame) {
-              console.log('Received video frame for emotion detection');
+              console.log(`📹 Received video frame for session ${sessionId} (length: ${data.frame.length})`);
               processVideoFrame(data.frame, sessionId);
+            } else {
+              console.warn('❌ Invalid video frame data:', { sessionId: !!sessionId, frame: !!data.frame });
             }
+            break;
+
+          case 'recording_start':
+            if (sessionId && activeSessions.has(sessionId)) {
+              const session = activeSessions.get(sessionId)!;
+              session.isRecording = true;
+              session.recordingEmotions = []; // Clear previous recording emotions
+              console.log(`Session ${sessionId} started recording`);
+            }
+            break;
+
+          case 'recording_stop':
+            if (sessionId && activeSessions.has(sessionId)) {
+              const session = activeSessions.get(sessionId)!;
+              session.isRecording = false;
+              console.log(`Session ${sessionId} stopped recording. Emotions during recording:`, session.recordingEmotions);
+            }
+            break;
+
+          case 'ping':
+            console.log('🏓 Received ping from frontend');
+            ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
             break;
 
           case 'emotion_update':

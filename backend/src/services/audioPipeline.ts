@@ -142,16 +142,41 @@ export function clearTTSQueue(sessionId: string): void {
 }
 
 function getEmotionContext(session: any): string {
-  if (!session?.emotionHistory || session.emotionHistory.length <= 1) {
-    return '';
+  let context = '';
+  
+  // Add recording emotions if available (most important)
+  if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
+    const recordingEmotions = session.recordingEmotions.map((e: any) => e.emotion);
+    const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
+      acc[emotion] = (acc[emotion] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const dominantEmotion = Object.entries(emotionCounts)
+      .sort(([,a]: any, [,b]: any) => b - a)[0][0];
+    
+    context += `During their last message, the user was primarily ${dominantEmotion}`;
+    
+    if (recordingEmotions.length > 1) {
+      const uniqueEmotions = [...new Set(recordingEmotions)];
+      if (uniqueEmotions.length > 1) {
+        context += ` with shifts to ${uniqueEmotions.filter(e => e !== dominantEmotion).join(', ')}`;
+      }
+    }
+    context += '. ';
   }
   
-  const recentEmotions = session.emotionHistory.slice(-3); // Last 3 emotions
-  const emotionSummary = recentEmotions
-    .map((e: any) => e.emotion)
-    .join(' → ');
+  // Add recent emotion history as secondary context
+  if (session?.emotionHistory && session.emotionHistory.length > 1) {
+    const recentEmotions = session.emotionHistory.slice(-3);
+    const emotionSummary = recentEmotions
+      .map((e: any) => e.emotion)
+      .join(' → ');
+    
+    context += `Recent emotion trend: ${emotionSummary}.`;
+  }
   
-  return `Recent emotion progression: ${emotionSummary}.`;
+  return context;
 }
 
 export async function listResembleVoices(): Promise<void> {
