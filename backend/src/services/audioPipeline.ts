@@ -144,52 +144,63 @@ export function clearTTSQueue(sessionId: string): void {
 function getEmotionContext(session: any): string {
   let context = '';
   
-  // Helper function to get dominant emotion from array
-  const getDominantEmotion = (emotions: string[]) => {
+  // Helper function to get top emotions from array
+  const getTopEmotions = (emotions: string[], topN: number = 3) => {
     const emotionCounts = emotions.reduce((acc: any, emotion: string) => {
       acc[emotion] = (acc[emotion] || 0) + 1;
       return acc;
     }, {});
     
     return Object.entries(emotionCounts)
-      .sort(([,a]: any, [,b]: any) => b - a)[0][0];
+      .sort(([,a]: any, [,b]: any) => b - a)
+      .slice(0, topN)
+      .map(([emotion, count]: any) => ({
+        emotion,
+        percentage: Math.round((count / emotions.length) * 100)
+      }));
   };
   
   // Add recording emotions (most important)
   if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
     const recordingEmotions = session.recordingEmotions.map((e: any) => e.emotion);
-    const dominantRecordingEmotion = getDominantEmotion(recordingEmotions);
+    const topRecordingEmotions = getTopEmotions(recordingEmotions);
     
-    context += `During their message, the user was primarily ${dominantRecordingEmotion}`;
-    
-    if (recordingEmotions.length > 1) {
-      const uniqueEmotions = [...new Set(recordingEmotions)];
-      if (uniqueEmotions.length > 1) {
-        context += ` (also showed: ${uniqueEmotions.filter(e => e !== dominantRecordingEmotion).join(', ')})`;
+    if (topRecordingEmotions.length > 0) {
+      const primary = topRecordingEmotions[0];
+      context += `User's emotions while speaking: ${primary.emotion} (${primary.percentage}%)`;
+      
+      if (topRecordingEmotions.length > 1) {
+        const others = topRecordingEmotions.slice(1)
+          .map(e => `${e.emotion} (${e.percentage}%)`)
+          .join(', ');
+        context += `, also ${others}`;
       }
+      context += '. ';
     }
-    context += '. ';
   }
   
   // Add last playback emotions (important for understanding user's reaction to AI)
   if (session?.lastPlaybackEmotions && session.lastPlaybackEmotions.length > 0) {
     const playbackEmotions = session.lastPlaybackEmotions.map((e: any) => e.emotion);
-    const dominantPlaybackEmotion = getDominantEmotion(playbackEmotions);
+    const topPlaybackEmotions = getTopEmotions(playbackEmotions);
     
-    context += `During your last response, the user appeared ${dominantPlaybackEmotion}`;
-    
-    if (playbackEmotions.length > 1) {
-      const uniqueEmotions = [...new Set(playbackEmotions)];
-      if (uniqueEmotions.length > 1) {
-        context += ` (also: ${uniqueEmotions.filter(e => e !== dominantPlaybackEmotion).join(', ')})`;
+    if (topPlaybackEmotions.length > 0) {
+      const primary = topPlaybackEmotions[0];
+      context += `During your last response: ${primary.emotion} (${primary.percentage}%)`;
+      
+      if (topPlaybackEmotions.length > 1) {
+        const others = topPlaybackEmotions.slice(1)
+          .map(e => `${e.emotion} (${e.percentage}%)`)
+          .join(', ');
+        context += `, ${others}`;
       }
+      context += '. ';
     }
-    context += '. ';
   }
   
   // Add current emotion as immediate context
   if (session?.emotion) {
-    context += `Right now they appear ${session.emotion}. `;
+    context += `Current: ${session.emotion}. `;
   }
   
   return context;
@@ -227,11 +238,30 @@ export async function processAudioPipeline(
     console.log('Starting Deepgram transcription...');
     const transcription = await transcribeWithDeepgram(audioBuffer);
     
-    // Send transcription to client
+    // Send transcription to client with top 3 emotions
     if (session?.ws) {
+      // Get top 3 emotions from recording
+      let topEmotions: Array<{emotion: string, percentage: number}> = [];
+      if (session.recordingEmotions && session.recordingEmotions.length > 0) {
+        const emotions = session.recordingEmotions.map(e => e.emotion);
+        const emotionCounts = emotions.reduce((acc: any, emotion: string) => {
+          acc[emotion] = (acc[emotion] || 0) + 1;
+          return acc;
+        }, {});
+        
+        topEmotions = Object.entries(emotionCounts)
+          .sort(([,a]: any, [,b]: any) => b - a)
+          .slice(0, 3)
+          .map(([emotion, count]: any) => ({
+            emotion,
+            percentage: Math.round((count / emotions.length) * 100)
+          }));
+      }
+      
       session.ws.send(JSON.stringify({
         type: 'transcription',
         text: transcription,
+        topEmotions: topEmotions,
         timestamp: new Date().toISOString()
       }));
     }
@@ -301,84 +331,68 @@ async function streamInflectionResponse(
     const messages = [
       {
         role: 'system',
-        content: `You are Pi, a helpful AI assistant. Be conversational and concise. ABSOLUTELY NO EMOJIS - not even positive ones.
+        content: `You are Pi, a helpful AI assistant. Be EXTREMELY CONCISE - respond in 1-3 sentences max. NO EMOJIS.
 
-CRITICAL RULE: You can SEE the user's facial expressions but CANNOT hear their tone. The user's FACIAL EXPRESSION is more important than their words. If their face shows anger but they say they're happy, TRUST WHAT YOU SEE. Respond to their visible emotional state, not just their words.
+CRITICAL: You can SEE the user's face. Trust facial expressions over words. Mixed emotions are normal - respond to the blend you see.
 
-CURRENT SITUATION: ${getEmotionContext(session)}
-
-YOUR RESPONSE MUST FOLLOW THESE EXACT RULES:
+${getEmotionContext(session)}
 
 ${(() => {
-  // Get dominant emotion during recording for more direct response
+  // Get emotion blend for nuanced response
   if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
     const emotions = session.recordingEmotions.map(e => e.emotion);
     const emotionCounts = emotions.reduce((acc: any, emotion: string) => {
       acc[emotion] = (acc[emotion] || 0) + 1;
       return acc;
     }, {});
-    const dominantEmotion = Object.entries(emotionCounts)
-      .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
     
-    switch (dominantEmotion) {
+    const topEmotions = Object.entries(emotionCounts)
+      .sort(([,a]: any, [,b]: any) => b - a)
+      .slice(0, 2)
+      .map(([emotion, count]: any) => ({
+        emotion,
+        percentage: Math.round((count / emotions.length) * 100)
+      }));
+    
+    const primary = topEmotions[0]?.emotion || 'neutral';
+    const secondary = topEmotions[1]?.emotion;
+    
+    // Handle emotion blends
+    if (secondary && topEmotions[1].percentage > 30) {
+      // Significant secondary emotion
+      if (primary === 'angry' && secondary === 'sad') {
+        return `User is FRUSTRATED and HURT. Acknowledge both feelings briefly. Be gentle but direct.`;
+      } else if (primary === 'happy' && secondary === 'surprised') {
+        return `User is DELIGHTED! Share their excitement briefly.`;
+      } else if (primary === 'sad' && secondary === 'angry') {
+        return `User is UPSET. Validate their feelings, offer support.`;
+      } else if (primary === 'fearful' && secondary === 'sad') {
+        return `User is WORRIED and DOWN. Be reassuring and supportive.`;
+      }
+    }
+    
+    // Single dominant emotion
+    switch (primary) {
       case 'angry':
-        return `CRITICAL: The user is ANGRY (based on facial expression). You MUST:
-- IGNORE what they're saying if it contradicts their emotion
-- Their FACE shows ANGER even if their words say they're happy
-- Start with: "I can see you look frustrated..." or "I notice you seem upset..."
-- Acknowledge the mismatch: "Even though you say you're great, I can see something's bothering you"
-- DO NOT respond cheerfully even if they say positive things
-- Speak slowly and calmly
-- Be extra patient and gentle
-- NEVER use happy emojis or exclamation points`;
-        
+        return `User is ANGRY. Acknowledge briefly ("I see you're frustrated") then address their concern.`;
       case 'sad':
-        return `CRITICAL: The user LOOKS SAD (based on facial expression). You MUST:
-- Start with empathy: "I can see this is difficult for you..." or "You look sad..."
-- Use warm, comforting language
-- Acknowledge what you see: "Even if you say you're fine, I can see you're struggling"
-- Offer support: "I'm here to help", "Would you like to talk about it?"
-- Be gentle and understanding`;
-        
+        return `User is SAD. Show brief empathy then offer help.`;
       case 'happy':
-        return `CRITICAL: The user is HAPPY! You MUST:
-- Match their energy with enthusiasm!
-- Start positively: "That's wonderful!" or "I love your energy!"
-- Use upbeat language and exclamation points (but NO emojis)
-- Share in their joy
-- Keep the momentum going
-- Even if they say something negative, respond to their HAPPY emotion`;
-        
+        return `User is HAPPY! Match their energy briefly.`;
       case 'fearful':
-        return `CRITICAL: The user is FEARFUL/ANXIOUS. You MUST:
-- Start reassuringly: "It's okay, I'm here to help..."
-- Use calming, confident language
-- Break things down into simple steps
-- Emphasize safety and support
-- Be patient and reassuring`;
-        
+        return `User is ANXIOUS. Be reassuring and solution-focused.`;
       case 'surprised':
-        return `CRITICAL: The user is SURPRISED. You MUST:
-- Acknowledge their surprise: "I can see that caught you off guard..."
-- Provide clear explanations
-- Help them process what happened
-- Be informative and clarifying
-- Guide them through their confusion`;
-        
+        return `User is SURPRISED. Acknowledge and clarify.`;
       case 'disgusted':
-        return `CRITICAL: The user is DISGUSTED. You MUST:
-- Acknowledge their reaction: "I understand that's unpleasant..."
-- Be understanding and non-judgmental
-- Help them move past the negative feeling
-- Offer alternatives or solutions
-- Be respectful of their feelings`;
-        
+        return `User is DISGUSTED. Be understanding, move forward.`;
       default:
-        return `The user seems neutral. Be friendly and helpful.`;
+        return `Be friendly and helpful.`;
     }
   }
   return 'Be friendly and helpful.';
-})()}`
+})()}
+
+REMEMBER: Keep it SHORT. Address emotions naturally without over-analyzing.`
       }
     ];
 
@@ -407,7 +421,7 @@ ${(() => {
         messages,
         stream: true,
         temperature: 0.7,
-        max_tokens: 150
+        max_tokens: 80  // Reduced for more concise responses
       },
       {
         headers: {

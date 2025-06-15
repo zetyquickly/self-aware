@@ -6,6 +6,8 @@ interface Message {
   type: 'transcription' | 'response' | 'emotion';
   text?: string;
   emotion?: string;
+  userEmotion?: string; // User's emotion during recording
+  topEmotions?: Array<{emotion: string, percentage: number}>; // Top 3 emotions
   timestamp: string;
 }
 
@@ -16,6 +18,7 @@ export function VoiceAssistant() {
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentEmotion, setCurrentEmotion] = useState('neutral');
+  const [recordingEmotion, setRecordingEmotion] = useState('neutral');
   const [sessionId, setSessionId] = useState<string>('');
   
   // Refs for media handling
@@ -65,6 +68,8 @@ export function VoiceAssistant() {
           setMessages(prev => [...prev, {
             type: 'transcription',
             text: data.text,
+            userEmotion: recordingEmotion, // Include the emotion during recording
+            topEmotions: data.topEmotions, // Include top 3 emotions
             timestamp: data.timestamp
           }]);
           break;
@@ -107,6 +112,10 @@ export function VoiceAssistant() {
         case 'emotion_update':
           console.log('🎭 Emotion updated:', data.emotion);
           setCurrentEmotion(data.emotion);
+          // If recording, also update recording emotion
+          if (isRecording) {
+            setRecordingEmotion(data.emotion);
+          }
           break;
           
         case 'pong':
@@ -448,6 +457,9 @@ export function VoiceAssistant() {
       mediaRecorder.start();
       setIsRecording(true);
       
+      // Capture current emotion as recording emotion
+      setRecordingEmotion(currentEmotion);
+      
       // Notify backend that recording started
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'recording_start' }));
@@ -541,13 +553,12 @@ export function VoiceAssistant() {
     return colors[emotion] || '#9E9E9E';
   };
 
-  // Main activation handler - only toggles voice, video runs always
+  // Main activation handler - only activates voice once
   const handleActivation = () => {
-    setIsVoiceActive(!isVoiceActive);
-    
-    if (isRecording) {
-      stopRecording();
+    if (!isVoiceActive) {
+      setIsVoiceActive(true);
     }
+    // Don't toggle off - once activated, it stays on
   };
 
   return (
@@ -582,7 +593,23 @@ export function VoiceAssistant() {
             >
               <div className="message-label">
                 {message.type === 'transcription' ? 'HUMAN:' : 'AI:'}
-                {message.emotion && ` (${message.emotion})`}
+                {message.type === 'transcription' && message.topEmotions && message.topEmotions.length > 0 && (
+                  <div className="emotion-badges">
+                    {message.topEmotions.map((emotionData, idx) => (
+                      <span 
+                        key={idx}
+                        className="emotion-badge"
+                        style={{ 
+                          backgroundColor: getEmotionColor(emotionData.emotion),
+                          opacity: idx === 0 ? 1 : 0.7 - (idx * 0.15)
+                        }}
+                      >
+                        {emotionData.emotion} {emotionData.percentage}%
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {message.type === 'response' && message.emotion && ` (${message.emotion})`}
               </div>
               <div className="message-text">{message.text}</div>
             </div>
@@ -638,6 +665,12 @@ export function VoiceAssistant() {
            box-sizing: border-box;
          }
          
+         /* Remove any default Next.js or parent styling */
+         body > div:first-child,
+         #__next > div {
+           background: transparent !important;
+         }
+         
          html, body {
            margin: 0;
            padding: 0;
@@ -647,10 +680,14 @@ export function VoiceAssistant() {
            overflow: hidden;
          }
          
+         body {
+           background: #1a1a1a !important;
+         }
+         
          #__next {
            width: 100vw;
            height: 100vh;
-           background: #1a1a1a;
+           background: #1a1a1a !important;
          }
          
          .container {
@@ -667,6 +704,7 @@ export function VoiceAssistant() {
            color: white;
            overflow: hidden;
            font-family: Arial, sans-serif;
+           z-index: 1;
          }
 
                  .header-text {
@@ -771,7 +809,7 @@ export function VoiceAssistant() {
            width: 85%;
            max-width: 1400px;
            height: 50vh;
-           background: rgba(0, 0, 0, 0.85);
+           background: rgba(0, 0, 0, 0.95);
            border-radius: 30px;
            padding: 40px;
            overflow-y: auto;
@@ -822,6 +860,27 @@ export function VoiceAssistant() {
           margin-bottom: 8px;
           opacity: 0.8;
           letter-spacing: 1px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .emotion-badges {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .emotion-badge {
+          padding: 4px 12px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          white-space: nowrap;
         }
 
         .message-text {
