@@ -1,12 +1,19 @@
 # Self-Aware AI
 
+
+https://github.com/user-attachments/assets/df2f0203-6213-4c03-bd41-7051e36ea3fb
+
+
 An AI assistant that can read emotions from video and respond with voice using advanced speech processing.
 
 ## Features
 
 - **Real-time Emotion Detection**: Uses computer vision to detect emotions from video feed
 - **Voice Processing**: Complete audio pipeline with speech-to-text, AI response generation, and text-to-speech
-- **Streaming Responses**: Real-time AI responses that adapt to detected emotions
+- **Str
+
+
+eaming Responses**: Real-time AI responses that adapt to detected emotions
 - **Push-to-Talk Interface**: Hold button to record, release to process
 - **Visual Feedback**: Live emotion display and conversation stream
 
