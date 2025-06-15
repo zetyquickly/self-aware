@@ -309,8 +309,6 @@ async function streamInflectionResponse(
 ): Promise<string> {
   const session = activeSessions.get(sessionId);
   let fullResponse = '';
-  let currentSentence = '';
-  const processedSentences = new Set<string>(); // Track processed sentences
 
   // Add user message to conversation history
   if (session) {
@@ -335,15 +333,11 @@ async function streamInflectionResponse(
 
 CRITICAL: You can SEE the user's face. Trust facial expressions over words. Mixed emotions are normal - respond to the blend you see.
 
-<<<<<<< Updated upstream
-${getEmotionContext(session)}
-=======
 CURRENT SITUATION: ${getEmotionContext(session)}
 
 START EVERY RESPONSE WITH DESCRIBING THE USER'S EMOTION. WHEN USER ASKS ABOUT THEIR EMOTION, YOU MUST RESPOND BASED ON THE INPUT EMOTION YOU RECEIVED.
 
 YOUR RESPONSE MUST FOLLOW THESE EXACT RULES:
->>>>>>> Stashed changes
 
 ${(() => {
   // Get emotion blend for nuanced response
@@ -467,64 +461,55 @@ REMEMBER: Keep it SHORT. Address emotions naturally without over-analyzing.`
             const parsed = JSON.parse(data);
             const content = parsed.choices?.[0]?.delta?.content;
             
-                         if (content) {
-               fullResponse += content;
-               currentSentence += content;
-               
-               // Log the streaming chunk
-               logStreamingChunk(sessionId, content, fullResponse);
-               
-               // Send incremental updates with just the new content
-               if (session?.ws) {
-                 // Determine AI's tone based on user's emotion
-                 let aiTone = 'neutral';
-                 if (session.recordingEmotions.length > 0) {
-                   const recordingEmotions = session.recordingEmotions.map(e => e.emotion);
-                   const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
-                     acc[emotion] = (acc[emotion] || 0) + 1;
-                     return acc;
-                   }, {});
-                   const dominantEmotion = Object.entries(emotionCounts)
-                     .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
-                   
-                   // Check if message is hostile
-                   const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
-                   const isHostile = hostileWords.some(word => 
-                     prompt.toLowerCase().includes(word)
-                   );
-                   
-                   // Map user emotion to AI tone
-                   const toneMap: Record<string, string> = {
-                     'angry': isHostile ? 'assertive' : 'calm',
-                     'sad': 'empathetic',
-                     'happy': 'cheerful',
-                     'fearful': 'reassuring',
-                     'surprised': 'explanatory',
-                     'disgusted': 'understanding',
-                     'neutral': 'friendly'
-                   };
-                   aiTone = toneMap[dominantEmotion] || 'friendly';
-                 }
-                 
-                 session.ws.send(JSON.stringify({
-                   type: 'response_chunk',
-                   text: content, // Send only the new chunk, not accumulated
-                   fullText: fullResponse, // Include full text for context
-                   emotion: aiTone, // AI's tone, not user's emotion
-                   timestamp: new Date().toISOString()
-                 }));
-               }
+            if (content) {
+              fullResponse += content;
               
-                             // Check for sentence end to generate TTS
-               if (content.match(/[.!?]/)) {
-                 const sentence = currentSentence.trim();
-                 if (sentence && !processedSentences.has(sentence)) {
-                   processedSentences.add(sentence);
-                   // Add to TTS queue instead of generating immediately
-                   addToTTSQueue(sentence, sessionId);
-                 }
-                 currentSentence = '';
-               }
+              // Log the streaming chunk
+              logStreamingChunk(sessionId, content, fullResponse);
+              
+              // Send incremental updates with just the new content
+              if (session?.ws) {
+                // Determine AI's tone based on user's emotion
+                let aiTone = 'neutral';
+                if (session.recordingEmotions.length > 0) {
+                  const recordingEmotions = session.recordingEmotions.map(e => e.emotion);
+                  const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
+                    acc[emotion] = (acc[emotion] || 0) + 1;
+                    return acc;
+                  }, {});
+                  const dominantEmotion = Object.entries(emotionCounts)
+                    .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
+                  
+                  // Check if message is hostile
+                  const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
+                  const isHostile = hostileWords.some(word => 
+                    prompt.toLowerCase().includes(word)
+                  );
+                  
+                  // Map user emotion to AI tone
+                  const toneMap: Record<string, string> = {
+                    'angry': isHostile ? 'assertive' : 'calm',
+                    'sad': 'empathetic',
+                    'happy': 'cheerful',
+                    'fearful': 'reassuring',
+                    'surprised': 'explanatory',
+                    'disgusted': 'understanding',
+                    'neutral': 'friendly'
+                  };
+                  aiTone = toneMap[dominantEmotion] || 'friendly';
+                }
+                
+                session.ws.send(JSON.stringify({
+                  type: 'response_chunk',
+                  text: content, // Send only the new chunk, not accumulated
+                  fullText: fullResponse, // Include full text for context
+                  emotion: aiTone, // AI's tone, not user's emotion
+                  timestamp: new Date().toISOString()
+                }));
+              }
+              
+              // Don't generate TTS for individual sentences anymore
+              // We'll send the full response to TTS after streaming completes
             }
           } catch (parseError) {
             console.error('Error parsing SSE data:', parseError);
@@ -533,15 +518,15 @@ REMEMBER: Keep it SHORT. Address emotions naturally without over-analyzing.`
       }
     });
 
-         response.data.on('end', () => {
-       // Generate TTS for any remaining content
-       const sentence = currentSentence.trim();
-       if (sentence && !processedSentences.has(sentence)) {
-         processedSentences.add(sentence);
-         // Add to TTS queue instead of generating immediately
-         addToTTSQueue(sentence, sessionId);
-       }
-     });
+    response.data.on('end', () => {
+      // Stream has ended, now send the FULL response to TTS
+      const finalResponse = fullResponse.trim();
+      if (finalResponse) {
+        console.log('🎤 Sending complete response to TTS:', finalResponse);
+        // Add the complete response to TTS queue
+        addToTTSQueue(finalResponse, sessionId);
+      }
+    });
 
     response.data.on('error', (error: Error) => {
       console.error('Stream error:', error);
