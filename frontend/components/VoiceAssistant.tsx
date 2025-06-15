@@ -648,7 +648,18 @@ export function VoiceAssistant() {
                     ))}
                   </div>
                 )}
-                {message.type === 'response' && message.emotion && ` (${message.emotion})`}
+                {message.type === 'response' && message.emotion && (
+                  <div className="emotion-badges">
+                    <span 
+                      className="emotion-badge"
+                      style={{ 
+                        backgroundColor: getEmotionColor(message.emotion)
+                      }}
+                    >
+                      {message.emotion}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="message-text">{message.text}</div>
             </div>
