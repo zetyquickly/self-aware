@@ -674,6 +674,7 @@ async function generateTTSForSentence(
     
     if (dominantEmotion === 'angry' && isHostileMessage) {
       volume = "loud";
+      speechRate = "110%";
       prosodyAttributes = [`rate="${speechRate}"`, `volume="${volume}"`];
     } else if (dominantEmotion === 'angry') {
       speechRate = "95%"; // Slower for calm response
@@ -682,7 +683,7 @@ async function generateTTSForSentence(
       speechRate = "95%"; // Slower for sadness
       prosodyAttributes = [`rate="${speechRate}"`];
     } else if (dominantEmotion === 'happy') {
-      speechRate = "110%"; // Faster for happiness
+      speechRate = "105%"; // Faster for happiness
       prosodyAttributes = [`rate="${speechRate}"`];
     } else if (dominantEmotion === 'fearful') {
       speechRate = "95%"; // Slightly slower for reassurance
