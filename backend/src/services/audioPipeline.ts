@@ -606,6 +606,8 @@ async function generateTTSForSentence(
     
     // Determine TTS emotion/style based on user's emotions
     let emotionPrompt = 'Speak in a neutral, conversational tone';
+    let dominantEmotion = 'neutral';
+    let isHostileMessage = false;
     
     if (session) {
       // Get dominant emotion from recording (what user felt while speaking)
@@ -615,7 +617,7 @@ async function generateTTSForSentence(
         return acc;
       }, {});
       
-      const dominantEmotion = Object.entries(emotionCounts)
+      dominantEmotion = Object.entries(emotionCounts)
         .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
       
       // Get the last user message to check for hostility
@@ -624,7 +626,7 @@ async function generateTTSForSentence(
         .pop()?.content || '';
       
       const hostileWords = ['fuck', 'shit', 'damn', 'hell', 'cunt', 'bitch', 'asshole', 'dick', 'piss'];
-      const isHostileMessage = hostileWords.some(word => 
+      isHostileMessage = hostileWords.some(word => 
         lastUserMessage.toLowerCase().includes(word)
       );
       
@@ -664,9 +666,68 @@ async function generateTTSForSentence(
       }
     }
     
-    // Wrap the sentence in SSML with emotion prompt
-    const ssmlData = `<speak prompt="${emotionPrompt}">${sentence}</speak>`;
+    // Determine prosody settings based on emotion
+    let speechRate = "100%"; // Default normal speed
+    let pitch = "medium"; // Default pitch
+    let volume = "medium"; // Default volume
+    let prosodyAttributes: string[] = [];
+    
+    if (dominantEmotion === 'angry' && isHostileMessage) {
+      volume = "loud";
+      prosodyAttributes = [`rate="${speechRate}"`, `volume="${volume}"`];
+    } else if (dominantEmotion === 'angry') {
+      speechRate = "95%"; // Slower for calm response
+      prosodyAttributes = [`rate="${speechRate}"`];
+    } else if (dominantEmotion === 'sad') {
+      speechRate = "95%"; // Slower for sadness
+      prosodyAttributes = [`rate="${speechRate}"`];
+    } else if (dominantEmotion === 'happy') {
+      speechRate = "110%"; // Faster for happiness
+      prosodyAttributes = [`rate="${speechRate}"`];
+    } else if (dominantEmotion === 'fearful') {
+      speechRate = "95%"; // Slightly slower for reassurance
+      prosodyAttributes = [`rate="${speechRate}"`];
+    } else if (dominantEmotion === 'surprised') {
+      speechRate = "105%"; // Slightly faster for surprise
+      prosodyAttributes = [`rate="${speechRate}"`];
+    } else if (dominantEmotion === 'disgusted') {
+      speechRate = "95%"; // Slightly slower for disgust
+      prosodyAttributes = [`rate="${speechRate}"`];
+    }
+    
+    // Process the sentence for natural pauses and emphasis
+    let processedSentence = sentence;
+    
+    // Add pauses after commas (if not already followed by a space and quote)
+    processedSentence = processedSentence.replace(/,(?!\s["'])/g, ',<break time="300ms"/>');
+    
+    // Add longer pauses for ellipsis
+    processedSentence = processedSentence.replace(/\.\.\./g, '<break time="800ms"/>');
+    
+    // Add pauses before "but" or "however" for natural flow
+    processedSentence = processedSentence.replace(/(\s)(but|however)(\s)/gi, '$1<break time="200ms"/>$2$3');
+    
+    // Emphasize words in ALL CAPS
+    processedSentence = processedSentence.replace(/\b([A-Z]{2,})\b/g, '<emphasis level="strong">$1</emphasis>');
+    
+    // Handle questions with rising intonation
+    if (processedSentence.endsWith('?')) {
+      // Questions often have rising pitch at the end
+      const lastWord = processedSentence.match(/(\w+)\?$/);
+      if (lastWord) {
+        processedSentence = processedSentence.replace(/(\w+)\?$/, '<prosody pitch="high">$1</prosody>?');
+      }
+    }
+    
+    // Wrap the sentence in SSML with emotion prompt and prosody
+    const prosodyTag = prosodyAttributes.length > 0 
+      ? `<prosody ${prosodyAttributes.join(' ')}>` 
+      : '';
+    const closeProsody = prosodyTag ? '</prosody>' : '';
+    
+    const ssmlData = `<speak prompt="${emotionPrompt}" temperature="0.8" exaggeration="0.7">${prosodyTag}${processedSentence}${closeProsody}</speak>`;
     console.log('🎤 SSML:', ssmlData);
+    console.log('📊 Speech settings:', { rate: speechRate, pitch, volume });
     
     // Use Resemble SDK with SSML body
     console.log('📤 Sending to Resemble API...');
