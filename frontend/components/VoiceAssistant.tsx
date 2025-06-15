@@ -602,6 +602,11 @@ export function VoiceAssistant() {
     <div className="container">
 
       {/* Connection Status */}
+      {/* Header Text */}
+      <div className="header-text">
+        This AI is self-aware. It can read the room and adjust accordingly!
+      </div>
+
       <div className="connection-status">
         <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
           <div className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
