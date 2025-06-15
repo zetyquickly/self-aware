@@ -137,10 +137,9 @@ export function VoiceAssistant() {
     };
   }, []);
 
-  // Start video immediately when component mounts
+  // Initialize WebSocket when component mounts
   useEffect(() => {
-    console.log('🚀 Component mounted, starting video...');
-    startVideo();
+    console.log('🚀 Component mounted...');
     
     // Debug: Check if WebSocket is connected and test it
     setTimeout(() => {
@@ -431,9 +430,15 @@ export function VoiceAssistant() {
   // Start recording
   const startRecording = async () => {
     try {
-      // Clear any pending audio queue when starting new recording
+      // Stop any ongoing TTS playback
       audioQueueRef.current = [];
       isPlayingRef.current = false;
+      
+      // Close and reset audio context to ensure clean state
+      if (audioContextRef.current) {
+        await audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -502,16 +507,16 @@ export function VoiceAssistant() {
     }
   };
 
-  // Handle button press/release
-  const handleMouseDown = () => {
-    if (isConnected && isVoiceActive) {
-      startRecording();
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (isRecording) {
-      stopRecording();
+  // Handle voice mode toggle
+  const handleVoiceModeToggle = () => {
+    if (!isVoiceActive) {
+      handleActivation(); // Start voice mode
+    } else {
+      // Stop everything
+      if (isRecording) {
+        stopRecording();
+      }
+      handleActivation(); // Stop voice mode
     }
   };
 
@@ -553,10 +558,43 @@ export function VoiceAssistant() {
     return colors[emotion] || '#9E9E9E';
   };
 
-  // Main activation handler - only activates voice once
+  // Main activation handler - toggles both voice and video
   const handleActivation = () => {
-    if (!isVoiceActive) {
-      setIsVoiceActive(true);
+    const newActiveState = !isVoiceActive;
+    setIsVoiceActive(newActiveState);
+    
+    if (newActiveState) {
+      // Starting everything
+      startVideo();
+      isStreamingRef.current = true;
+    } else {
+      // Stopping everything
+      if (isRecording) {
+        stopRecording();
+      }
+      
+      // Stop video stream
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
+      
+      // Clear video display
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
+      isStreamingRef.current = false;
+      
+      // Clear audio context
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      
+      // Clear audio queue
+      audioQueueRef.current = [];
+      isPlayingRef.current = false;
     }
     // Don't toggle off - once activated, it stays on
   };
@@ -620,24 +658,19 @@ export function VoiceAssistant() {
       {/* Push-to-Talk Button */}
       <div className="center-control">
         <button
-          className={`voice-button ${isVoiceActive ? 'active' : ''} ${isRecording ? 'recording' : ''}`}
-          onClick={handleActivation}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onTouchStart={handleMouseDown}
-          onTouchEnd={handleMouseUp}
-          disabled={!isConnected && isVoiceActive}
+          className={`voice-button ${isVoiceActive ? 'stop' : ''} ${isRecording ? 'recording' : ''}`}
+          onClick={handleVoiceModeToggle}
+          disabled={!isConnected}
         >
           <div className="pulse-ring" />
           <div className="button-text">
-            {!isVoiceActive ? 'Start' : isRecording ? 'Recording...' : 'Hold to Talk'}
+            {!isVoiceActive ? 'Start Voice Mode' : isRecording ? 'Recording...' : 'Stop Voice Mode'}
           </div>
         </button>
       </div>
 
       {/* Video Container */}
-      <div className="video-container">
+      <div className={`video-container ${isVoiceActive ? 'active' : ''}`}>
         <video 
           ref={videoRef}
           autoPlay 
@@ -654,7 +687,7 @@ export function VoiceAssistant() {
              {/* Instructions */}
        <p className="instructions">
          {isConnected 
-           ? (isVoiceActive ? 'Hold the button or press SPACEBAR to record' : 'Click Start to enable voice input')
+           ? (isVoiceActive ? 'Hold SPACEBAR to record' : 'Click Start to enable voice input')
            : 'Connecting to server...'}
        </p>
 
@@ -691,7 +724,8 @@ export function VoiceAssistant() {
          }
          
          .container {
-           width: 100vw;
+           width: 100%;
+           min-width: 100vw;
            height: 100vh;
            margin: 0;
            padding: 0;
@@ -704,7 +738,8 @@ export function VoiceAssistant() {
            color: white;
            overflow: hidden;
            font-family: Arial, sans-serif;
-           z-index: 1;
+           display: flex;
+           flex-direction: column;
          }
 
                  .header-text {
@@ -920,14 +955,15 @@ export function VoiceAssistant() {
           box-shadow: 0 6px 25px rgba(33, 150, 243, 0.6);
         }
 
-        .voice-button.active {
-          background: #4CAF50;
-          box-shadow: 0 4px 20px rgba(76, 175, 80, 0.6);
+        .voice-button.stop {
+          background: #F44336;
+          box-shadow: 0 4px 20px rgba(244, 67, 54, 0.6);
         }
 
         .voice-button.recording {
-          background: #F44336;
-          box-shadow: 0 4px 20px rgba(244, 67, 54, 0.6);
+          background: #4CAF50;
+          box-shadow: 0 4px 20px rgba(76, 175, 80, 0.6);
+          transform: scale(1.05);
         }
 
         .voice-button.recording .pulse-ring {
@@ -950,7 +986,7 @@ export function VoiceAssistant() {
           text-align: center;
         }
 
-                 .video-container {
+  .video-container {
            position: fixed;
            bottom: 20px;
            right: 20px;
@@ -959,6 +995,12 @@ export function VoiceAssistant() {
            overflow: hidden;
            z-index: 100;
            padding-bottom: 60px;
+           opacity: 0;
+           transition: opacity 0.3s ease;
+         }
+
+        .video-container.active {
+           opacity: 1;
          }
 
         .video-element {
