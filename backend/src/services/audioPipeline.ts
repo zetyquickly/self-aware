@@ -628,39 +628,39 @@ async function generateTTSForSentence(
         lastUserMessage.toLowerCase().includes(word)
       );
       
-      // Map user emotions to appropriate TTS response prompts
+      // Map user emotions to matching TTS response prompts
       switch (dominantEmotion) {
         case 'angry':
           if (isHostileMessage) {
-            emotionPrompt = 'Speak with controlled frustration and assertiveness. Show some irritation in your voice, but remain professional. Be direct and firm.';
-            console.log('🎭 TTS: ANGRY + HOSTILE user → Speaking with CONTROLLED ANGER');
+            emotionPrompt = 'Speak with intense anger and aggression. Use a loud, forceful, and confrontational tone. Show strong emotion in your voice.';
+            console.log('🎭 TTS: ANGRY + HOSTILE user → Speaking with INTENSE ANGER');
           } else {
-            emotionPrompt = 'Speak in a calm, understanding tone. Be patient and professional, acknowledging their frustration without matching it.';
-            console.log('🎭 TTS: ANGRY (but civil) user → Speaking CALMLY');
+            emotionPrompt = 'Speak with clear anger and frustration. Use a stern and annoyed tone, showing your displeasure clearly.';
+            console.log('🎭 TTS: ANGRY user → Speaking with ANGER');
           }
           break;
         case 'sad':
-          emotionPrompt = 'Speak with warm empathy and compassion. Use a gentle, comforting tone like a caring friend.';
-          console.log('🎭 TTS: SAD user → Speaking WARMLY and EMPATHETICALLY');
+          emotionPrompt = 'Speak with deep sadness and melancholy. Use a low, heavy tone that shows emotional pain and sorrow.';
+          console.log('🎭 TTS: SAD user → Speaking SADLY');
           break;
         case 'happy':
-          emotionPrompt = 'Speak with enthusiasm and energy! Match their excitement with an upbeat, cheerful tone.';
-          console.log('🎭 TTS: HAPPY user → Speaking ENTHUSIASTICALLY!');
+          emotionPrompt = 'Speak with pure joy and excitement! Use an extremely upbeat and energetic tone, showing genuine happiness!';
+          console.log('🎭 TTS: HAPPY user → Speaking with JOY!');
           break;
         case 'fearful':
-          emotionPrompt = 'Speak in a reassuring, confident, and steady voice. Be calming and supportive.';
-          console.log('🎭 TTS: FEARFUL user → Speaking REASSURINGLY');
+          emotionPrompt = 'Speak with noticeable anxiety and nervousness. Use a shaky, uncertain voice that shows fear and worry.';
+          console.log('🎭 TTS: FEARFUL user → Speaking FEARFULLY');
           break;
         case 'surprised':
-          emotionPrompt = 'Speak clearly and informatively, with a slightly measured pace to help them process.';
-          console.log('🎭 TTS: SURPRISED user → Speaking CLEARLY');
+          emotionPrompt = 'Speak with genuine shock and amazement! Use an astonished tone with heightened pitch and energy!';
+          console.log('🎭 TTS: SURPRISED user → Speaking with SURPRISE');
           break;
         case 'disgusted':
-          emotionPrompt = 'Speak with understanding and respect. Use a neutral, non-judgmental tone.';
-          console.log('🎭 TTS: DISGUSTED user → Speaking RESPECTFULLY');
+          emotionPrompt = 'Speak with strong disgust and revulsion. Use a tone that shows clear distaste and contempt.';
+          console.log('🎭 TTS: DISGUSTED user → Speaking with DISGUST');
           break;
         default:
-          emotionPrompt = 'Speak in a friendly, conversational tone';
+          emotionPrompt = 'Speak in a neutral, conversational tone';
       }
     }
     
