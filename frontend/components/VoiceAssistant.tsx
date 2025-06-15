@@ -95,9 +95,8 @@ export function VoiceAssistant() {
               }];
             }
           });
-          if (data.emotion) {
-            setCurrentEmotion(data.emotion);
-          }
+          // Don't update currentEmotion here - that's for the user's facial emotion
+          // data.emotion is the AI's tone, not the user's emotion
           break;
           
         case 'audio_chunk':
