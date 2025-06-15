@@ -27,7 +27,6 @@ async function processVideoFrame(frameData: string, sessionId: string): Promise<
     }
     
     lastEmotionRequest = currentTime;
-    console.log('Processing video frame for emotion detection...');
     
     // Send to emotion server
     const response = await axios.post('http://localhost:5139/detect', {
@@ -39,7 +38,7 @@ async function processVideoFrame(frameData: string, sessionId: string): Promise<
       }
     });
     
-    console.log('🔍 Emotion detection response:', response.data);
+          // Reduced logging - removed verbose response logging
     
     if (response.status === 200 && response.data.success && response.data.detections?.length > 0) {
       const detection = response.data.detections[0];
@@ -61,7 +60,6 @@ async function processVideoFrame(frameData: string, sessionId: string): Promise<
       };
       
       const mappedEmotion = emotionMap[emotionName] || emotionName;
-      console.log(`Detected emotion: ${emotionText} -> ${mappedEmotion}`);
       
       // Update session emotion
       const session = activeSessions.get(sessionId);
@@ -99,6 +97,15 @@ async function processVideoFrame(frameData: string, sessionId: string): Promise<
           });
           console.log(`📹 Recording emotion: ${mappedEmotion} (total during recording: ${session.recordingEmotions.length})`);
         }
+        
+        // If playing TTS, store in playback emotions
+        if (session.isPlayingTTS) {
+          session.playbackEmotions.push({
+            emotion: mappedEmotion as any,
+            timestamp
+          });
+          console.log(`🔊 Playback emotion: ${mappedEmotion} (total during playback: ${session.playbackEmotions.length})`);
+        }
       }
     }
   } catch (error) {
@@ -133,7 +140,10 @@ export function setupWebSocket(wss: WebSocketServer) {
                 emotionHistory: [{ emotion: 'neutral', timestamp: Date.now() }],
                 conversationHistory: [],
                 recordingEmotions: [],
+                playbackEmotions: [],
+                lastPlaybackEmotions: [],
                 isRecording: false,
+                isPlayingTTS: false,
                 isActive: true
               });
             }
@@ -142,8 +152,11 @@ export function setupWebSocket(wss: WebSocketServer) {
 
           case 'video_frame':
             if (sessionId && data.frame) {
-              console.log(`📹 Received video frame for session ${sessionId} (length: ${data.frame.length})`);
-              processVideoFrame(data.frame, sessionId);
+                    // Reduced logging - only log every 10th frame
+      if (Math.random() < 0.1) {
+        console.log(`📹 Processing video frames for session ${sessionId}`);
+      }
+      processVideoFrame(data.frame, sessionId);
             } else {
               console.warn('❌ Invalid video frame data:', { sessionId: !!sessionId, frame: !!data.frame });
             }
@@ -163,6 +176,25 @@ export function setupWebSocket(wss: WebSocketServer) {
               const session = activeSessions.get(sessionId)!;
               session.isRecording = false;
               console.log(`Session ${sessionId} stopped recording. Emotions during recording:`, session.recordingEmotions);
+            }
+            break;
+
+          case 'tts_start':
+            if (sessionId && activeSessions.has(sessionId)) {
+              const session = activeSessions.get(sessionId)!;
+              session.isPlayingTTS = true;
+              session.playbackEmotions = []; // Clear for new playback
+              console.log(`Session ${sessionId} started TTS playback`);
+            }
+            break;
+
+          case 'tts_stop':
+            if (sessionId && activeSessions.has(sessionId)) {
+              const session = activeSessions.get(sessionId)!;
+              session.isPlayingTTS = false;
+              // Store playback emotions for next response
+              session.lastPlaybackEmotions = [...session.playbackEmotions];
+              console.log(`Session ${sessionId} stopped TTS playback. Emotions during playback:`, session.playbackEmotions);
             }
             break;
 

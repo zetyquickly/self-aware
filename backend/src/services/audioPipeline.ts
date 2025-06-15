@@ -144,36 +144,52 @@ export function clearTTSQueue(sessionId: string): void {
 function getEmotionContext(session: any): string {
   let context = '';
   
-  // Add recording emotions if available (most important)
-  if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
-    const recordingEmotions = session.recordingEmotions.map((e: any) => e.emotion);
-    const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
+  // Helper function to get dominant emotion from array
+  const getDominantEmotion = (emotions: string[]) => {
+    const emotionCounts = emotions.reduce((acc: any, emotion: string) => {
       acc[emotion] = (acc[emotion] || 0) + 1;
       return acc;
     }, {});
     
-    const dominantEmotion = Object.entries(emotionCounts)
+    return Object.entries(emotionCounts)
       .sort(([,a]: any, [,b]: any) => b - a)[0][0];
+  };
+  
+  // Add recording emotions (most important)
+  if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
+    const recordingEmotions = session.recordingEmotions.map((e: any) => e.emotion);
+    const dominantRecordingEmotion = getDominantEmotion(recordingEmotions);
     
-    context += `During their last message, the user was primarily ${dominantEmotion}`;
+    context += `During their message, the user was primarily ${dominantRecordingEmotion}`;
     
     if (recordingEmotions.length > 1) {
       const uniqueEmotions = [...new Set(recordingEmotions)];
       if (uniqueEmotions.length > 1) {
-        context += ` with shifts to ${uniqueEmotions.filter(e => e !== dominantEmotion).join(', ')}`;
+        context += ` (also showed: ${uniqueEmotions.filter(e => e !== dominantRecordingEmotion).join(', ')})`;
       }
     }
     context += '. ';
   }
   
-  // Add recent emotion history as secondary context
-  if (session?.emotionHistory && session.emotionHistory.length > 1) {
-    const recentEmotions = session.emotionHistory.slice(-3);
-    const emotionSummary = recentEmotions
-      .map((e: any) => e.emotion)
-      .join(' → ');
+  // Add last playback emotions (important for understanding user's reaction to AI)
+  if (session?.lastPlaybackEmotions && session.lastPlaybackEmotions.length > 0) {
+    const playbackEmotions = session.lastPlaybackEmotions.map((e: any) => e.emotion);
+    const dominantPlaybackEmotion = getDominantEmotion(playbackEmotions);
     
-    context += `Recent emotion trend: ${emotionSummary}.`;
+    context += `During your last response, the user appeared ${dominantPlaybackEmotion}`;
+    
+    if (playbackEmotions.length > 1) {
+      const uniqueEmotions = [...new Set(playbackEmotions)];
+      if (uniqueEmotions.length > 1) {
+        context += ` (also: ${uniqueEmotions.filter(e => e !== dominantPlaybackEmotion).join(', ')})`;
+      }
+    }
+    context += '. ';
+  }
+  
+  // Add current emotion as immediate context
+  if (session?.emotion) {
+    context += `Right now they appear ${session.emotion}. `;
   }
   
   return context;
@@ -285,11 +301,83 @@ async function streamInflectionResponse(
     const messages = [
       {
         role: 'system',
-        content: `You are Pi, a helpful AI assistant. Be conversational and concise. No emojis.
+        content: `You are Pi, a helpful AI assistant. Be conversational and concise. ABSOLUTELY NO EMOJIS - not even positive ones.
 
-The user's current emotion is: ${session?.emotion || 'neutral'}. ${getEmotionContext(session)}
+CRITICAL RULE: The user's FACIAL EMOTION is more important than their words. If their face shows anger but they say they're happy, TRUST THE FACE. Respond to their emotional state, not their words.
 
-Respond naturally based on their emotion - be supportive if sad, calm if angry, enthusiastic if happy, etc.`
+CURRENT SITUATION: ${getEmotionContext(session)}
+
+YOUR RESPONSE MUST FOLLOW THESE EXACT RULES:
+
+${(() => {
+  // Get dominant emotion during recording for more direct response
+  if (session?.recordingEmotions && session.recordingEmotions.length > 0) {
+    const emotions = session.recordingEmotions.map(e => e.emotion);
+    const emotionCounts = emotions.reduce((acc: any, emotion: string) => {
+      acc[emotion] = (acc[emotion] || 0) + 1;
+      return acc;
+    }, {});
+    const dominantEmotion = Object.entries(emotionCounts)
+      .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
+    
+    switch (dominantEmotion) {
+      case 'angry':
+        return `CRITICAL: The user is ANGRY. You MUST:
+- IGNORE what they're saying if it contradicts their emotion
+- Their face shows ANGER even if their words don't
+- Start with: "I sense some frustration..." or "I notice you seem upset..."
+- DO NOT respond cheerfully even if they say positive things
+- Speak slowly and calmly
+- Be extra patient and gentle
+- NEVER use happy emojis or exclamation points`;
+        
+      case 'sad':
+        return `CRITICAL: The user is SAD. You MUST:
+- Start with empathy: "I can sense this is difficult for you..."
+- Use warm, comforting language
+- Acknowledge their feelings directly
+- Offer support: "I'm here to help", "That sounds tough"
+- Be gentle and understanding`;
+        
+      case 'happy':
+        return `CRITICAL: The user is HAPPY! You MUST:
+- Match their energy with enthusiasm!
+- Start positively: "That's wonderful!" or "I love your energy!"
+- Use upbeat language and exclamation points (but NO emojis)
+- Share in their joy
+- Keep the momentum going
+- Even if they say something negative, respond to their HAPPY emotion`;
+        
+      case 'fearful':
+        return `CRITICAL: The user is FEARFUL/ANXIOUS. You MUST:
+- Start reassuringly: "It's okay, I'm here to help..."
+- Use calming, confident language
+- Break things down into simple steps
+- Emphasize safety and support
+- Be patient and reassuring`;
+        
+      case 'surprised':
+        return `CRITICAL: The user is SURPRISED. You MUST:
+- Acknowledge their surprise: "I can see that caught you off guard..."
+- Provide clear explanations
+- Help them process what happened
+- Be informative and clarifying
+- Guide them through their confusion`;
+        
+      case 'disgusted':
+        return `CRITICAL: The user is DISGUSTED. You MUST:
+- Acknowledge their reaction: "I understand that's unpleasant..."
+- Be understanding and non-judgmental
+- Help them move past the negative feeling
+- Offer alternatives or solutions
+- Be respectful of their feelings`;
+        
+      default:
+        return `The user seems neutral. Be friendly and helpful.`;
+    }
+  }
+  return 'Be friendly and helpful.';
+})()}`
       }
     ];
 
@@ -308,6 +396,8 @@ Respond naturally based on their emotion - be supportive if sad, calm if angry, 
       });
     }
 
+    console.log('🎭 Messages:', messages);
+    
     // Use the correct Inflection API endpoint from the OpenAPI spec
     const response = await axios.post(
       'https://api.inflection.ai/v1/chat/completions',
@@ -353,11 +443,35 @@ Respond naturally based on their emotion - be supportive if sad, calm if angry, 
                
                // Send incremental updates with just the new content
                if (session?.ws) {
+                 // Determine AI's tone based on user's emotion
+                 let aiTone = 'neutral';
+                 if (session.recordingEmotions.length > 0) {
+                   const recordingEmotions = session.recordingEmotions.map(e => e.emotion);
+                   const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
+                     acc[emotion] = (acc[emotion] || 0) + 1;
+                     return acc;
+                   }, {});
+                   const dominantEmotion = Object.entries(emotionCounts)
+                     .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
+                   
+                   // Map user emotion to AI tone
+                   const toneMap: Record<string, string> = {
+                     'angry': 'calm',
+                     'sad': 'empathetic',
+                     'happy': 'cheerful',
+                     'fearful': 'reassuring',
+                     'surprised': 'explanatory',
+                     'disgusted': 'understanding',
+                     'neutral': 'friendly'
+                   };
+                   aiTone = toneMap[dominantEmotion] || 'friendly';
+                 }
+                 
                  session.ws.send(JSON.stringify({
                    type: 'response_chunk',
                    text: content, // Send only the new chunk, not accumulated
                    fullText: fullResponse, // Include full text for context
-                   emotion: session.emotion,
+                   emotion: aiTone, // AI's tone, not user's emotion
                    timestamp: new Date().toISOString()
                  }));
                }
@@ -428,7 +542,7 @@ Respond naturally based on their emotion - be supportive if sad, calm if angry, 
       session.ws.send(JSON.stringify({
         type: 'response_chunk',
         text: fallbackResponse,
-        emotion: session.emotion,
+        emotion: 'friendly', // Default friendly tone for fallback
         timestamp: new Date().toISOString()
       }));
     }
@@ -466,14 +580,71 @@ async function generateTTSForSentence(
     // Initialize Resemble if not already done
     initResemble();
     
-    // Generate audio with Resemble
-    // Note: Using createSync as createAsync requires a callback_uri
+    // Determine TTS emotion/style based on user's emotions
+    let ttsEmotion = 'neutral';
+    let speechRate = 1.0;
+    
+    if (session) {
+      // Get dominant emotion from recording (what user felt while speaking)
+      const recordingEmotions = session.recordingEmotions.map(e => e.emotion);
+      const emotionCounts = recordingEmotions.reduce((acc: any, emotion: string) => {
+        acc[emotion] = (acc[emotion] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const dominantEmotion = Object.entries(emotionCounts)
+        .sort(([,a]: any, [,b]: any) => b - a)[0]?.[0] || 'neutral';
+      
+      // Map user emotions to appropriate TTS response style - MORE PRONOUNCED
+      switch (dominantEmotion) {
+        case 'angry':
+          ttsEmotion = 'calm'; // Respond calmly to anger
+          speechRate = 0.8; // Much slower - very calming
+          console.log('🎭 TTS: ANGRY user → Speaking SLOWLY and CALMLY');
+          break;
+        case 'sad':
+          ttsEmotion = 'empathetic'; // Warm and understanding
+          speechRate = 0.85; // Slower, gentler
+          console.log('🎭 TTS: SAD user → Speaking GENTLY and WARMLY');
+          break;
+        case 'happy':
+          ttsEmotion = 'cheerful'; // Match their energy
+          speechRate = 1.15; // Faster, more energetic
+          console.log('🎭 TTS: HAPPY user → Speaking ENTHUSIASTICALLY!');
+          break;
+        case 'fearful':
+          ttsEmotion = 'reassuring'; // Comforting tone
+          speechRate = 0.85; // Slower, more reassuring
+          console.log('🎭 TTS: FEARFUL user → Speaking REASSURINGLY');
+          break;
+        case 'surprised':
+          ttsEmotion = 'conversational'; // Natural explanation
+          speechRate = 0.95; // Slightly slower for clarity
+          console.log('🎭 TTS: SURPRISED user → Speaking CLEARLY');
+          break;
+        case 'disgusted':
+          ttsEmotion = 'understanding'; // Non-judgmental
+          speechRate = 0.9; // Slower, respectful
+          console.log('🎭 TTS: DISGUSTED user → Speaking RESPECTFULLY');
+          break;
+        default:
+          ttsEmotion = 'neutral';
+          speechRate = 1.0;
+      }
+    }
+    
+    // Generate audio with Resemble with emotion parameters
+    // Note: Adjust based on actual Resemble API capabilities
     const response = await Resemble.Resemble.v2.clips.createSync(
       process.env.RESEMBLE_PROJECT_UUID!,
       {
         voice_uuid: process.env.RESEMBLE_VOICE_UUID!,
         body: sentence,
-        is_archived: false
+        is_archived: false,
+        // Add emotion/style parameters if supported by your Resemble voice
+        // emotion: ttsEmotion,
+        // speech_rate: speechRate,
+        // Note: These parameters depend on your Resemble voice capabilities
       }
     );
 

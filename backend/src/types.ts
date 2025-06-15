@@ -7,7 +7,10 @@ export interface ActiveSession {
   emotionHistory: Array<{ emotion: EmotionType; timestamp: number }>;
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
   recordingEmotions: Array<{ emotion: EmotionType; timestamp: number }>;
+  playbackEmotions: Array<{ emotion: EmotionType; timestamp: number }>;
+  lastPlaybackEmotions: Array<{ emotion: EmotionType; timestamp: number }>;
   isRecording: boolean;
+  isPlayingTTS: boolean;
   isActive: boolean;
 }
 

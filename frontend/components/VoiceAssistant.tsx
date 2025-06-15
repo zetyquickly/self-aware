@@ -17,7 +17,6 @@ export function VoiceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentEmotion, setCurrentEmotion] = useState('neutral');
   const [sessionId, setSessionId] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState(false);
   
   // Refs for media handling
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -32,9 +31,15 @@ export function VoiceAssistant() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const emotionSocketRef = useRef<any>(null);
+  const isStreamingRef = useRef<boolean>(false);
   
   // Conversation state
   const currentResponseDivRef = useRef<HTMLDivElement | null>(null);
+  
+  // Rate limiting for emotion detection
+  const lastEmotionRequestRef = useRef<number>(0);
+  const EMOTION_REQUEST_INTERVAL = 1000; // 1 second between requests
+  const frameCountRef = useRef<number>(0);
 
   // Initialize WebSocket connection to Node.js backend
   useEffect(() => {
@@ -98,6 +103,15 @@ export function VoiceAssistant() {
             playNextAudioChunk();
           }
           break;
+          
+        case 'emotion_update':
+          console.log('🎭 Emotion updated:', data.emotion);
+          setCurrentEmotion(data.emotion);
+          break;
+          
+        case 'pong':
+          console.log('🏓 Received pong from backend');
+          break;
       }
     };
 
@@ -116,8 +130,26 @@ export function VoiceAssistant() {
 
   // Start video immediately when component mounts
   useEffect(() => {
+    console.log('🚀 Component mounted, starting video...');
     startVideo();
+    
+    // Debug: Check if WebSocket is connected and test it
+    setTimeout(() => {
+      console.log('🔍 WebSocket status check:');
+      console.log('- wsRef.current:', !!wsRef.current);
+      console.log('- WebSocket state:', wsRef.current?.readyState);
+      console.log('- isConnected:', isConnected);
+      console.log('- isStreaming:', isStreamingRef.current);
+      
+      // Test WebSocket with a ping
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log('🏓 Sending test ping...');
+        wsRef.current.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+      }
+    }, 3000);
+    
     return () => {
+      console.log('🧹 Component unmounting, cleaning up...');
       if (emotionSocketRef.current) {
         emotionSocketRef.current.close();
       }
@@ -154,7 +186,9 @@ export function VoiceAssistant() {
 
   // Video streaming functions
   const startVideo = async () => {
+    console.log('🎥 Starting video...');
     try {
+      console.log('Requesting media access...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: {
           width: { ideal: 640 },
@@ -164,23 +198,40 @@ export function VoiceAssistant() {
         audio: true 
       });
       
+      console.log('✅ Media access granted, stream:', stream);
       mediaStreamRef.current = stream;
+      
       if (videoRef.current) {
+        console.log('Setting video srcObject...');
         videoRef.current.srcObject = stream;
         
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-          setIsStreaming(true);
-          sendVideoFrames();
+          console.log('✅ Video metadata loaded, starting playback...');
+          videoRef.current?.play().then(() => {
+            console.log('✅ Video playing, starting frame capture...');
+            isStreamingRef.current = true;
+            sendVideoFrames();
+          }).catch(err => {
+            console.error('❌ Video play failed:', err);
+          });
         };
+        
+        videoRef.current.onerror = (err) => {
+          console.error('❌ Video error:', err);
+        };
+      } else {
+        console.error('❌ videoRef.current is null');
       }
     } catch (err) {
-      console.error('Error accessing media devices:', err);
+      console.error('❌ Error accessing media devices:', err);
     }
   };
 
   const sendVideoFrames = () => {
-    if (!isStreaming || !videoRef.current || !canvasRef.current) return;
+    if (!isStreamingRef.current || !videoRef.current || !canvasRef.current) {
+      setTimeout(sendVideoFrames, 100);
+      return;
+    }
 
     try {
       const video = videoRef.current;
@@ -202,43 +253,121 @@ export function VoiceAssistant() {
       // Get frame data with reduced quality
       const frame = canvas.toDataURL('image/jpeg', 0.8);
       
-      // Send to emotion detection (we'll implement a simple version)
-      if (frame && frame.length > 22) {
-        processEmotion(frame);
+      // Rate limit emotion detection requests
+      const currentTime = Date.now();
+      
+      if (frame && frame.length > 22 && 
+          currentTime - lastEmotionRequestRef.current >= EMOTION_REQUEST_INTERVAL) {
+        lastEmotionRequestRef.current = currentTime;
+        frameCountRef.current += 1;
+        // Reduced logging - only log every 10th frame
+        if (frameCountRef.current % 10 === 0) {
+          console.log(`📹 Sent ${frameCountRef.current} video frames`);
+        }
+        
+        // Send video frame via WebSocket (like the Python Flask version)
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'video_frame',
+            frame: frame
+          }));
+        } else {
+          console.warn('⚠️ WebSocket not connected, cannot send video frame');
+        }
       }
     } catch (err) {
-      console.error('Error capturing video frame:', err);
+      console.error('❌ Error capturing video frame:', err);
     }
 
     // Schedule next frame
-    setTimeout(sendVideoFrames, 200); // 5 FPS
+    setTimeout(sendVideoFrames, 100); // 10 FPS
   };
 
-  // Simple emotion processing (placeholder - you can integrate with your emotion server)
+  // Real emotion processing using your emotion detection server
   const processEmotion = async (frameData: string) => {
     try {
       // Extract base64 data
       const base64Data = frameData.split(',')[1];
       
-      // For now, we'll simulate emotion detection
-      // You can replace this with actual API calls to your emotion server
-      const emotions = ['happy', 'sad', 'angry', 'neutral', 'surprised'];
-      const randomEmotion = emotions[Math.floor(Math.random() * emotions.length)];
+      if (!base64Data) {
+        console.warn('Invalid frame data for emotion processing');
+        return;
+      }
       
-      // Update emotion with some randomness to simulate real detection
-      if (Math.random() > 0.7) { // Only update 30% of the time to avoid too frequent changes
-        setCurrentEmotion(randomEmotion);
+      console.log('Attempting emotion detection via Node.js proxy...');
+      console.log('Base64 data length:', base64Data.length);
+      
+      // Use Node.js backend as proxy to avoid CORS issues
+      const response = await fetch('http://localhost:3001/api/audio/emotion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_base64: base64Data
+        }),
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      console.log('Emotion server response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Emotion server response data:', data);
         
-        // Forward emotion to Node.js backend if connected
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ 
-            type: 'emotion_update', 
-            emotion: randomEmotion 
-          }));
+        if (data.success && data.detections && data.detections.length > 0) {
+          // Get the first detected emotion
+          const detection = data.detections[0];
+          let emotionText = detection.emotion;
+          
+          console.log('Detected emotion:', emotionText);
+          
+          // Extract just the emotion name (remove confidence if present)
+          const emotionName = emotionText.split('(')[0].trim().toLowerCase();
+          
+          // Map emotion names to match your color scheme
+          const emotionMap: Record<string, string> = {
+            'anger': 'angry',
+            'contempt': 'disgusted',
+            'disgust': 'disgusted',
+            'fear': 'fearful',
+            'happy': 'happy',
+            'neutral': 'neutral',
+            'sad': 'sad',
+            'surprise': 'surprised'
+          };
+          
+          const mappedEmotion = emotionMap[emotionName] || emotionName;
+          console.log('Mapped emotion:', mappedEmotion);
+          
+          // Update emotion state
+          setCurrentEmotion(mappedEmotion);
+          
+          // Forward emotion to Node.js backend if connected
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ 
+              type: 'emotion_update', 
+              emotion: mappedEmotion 
+            }));
+          }
+        } else {
+          console.warn('No detections in emotion server response');
         }
+      } else {
+        console.warn('Emotion server returned non-OK status:', response.status);
+        const errorText = await response.text();
+        console.warn('Error response:', errorText);
       }
     } catch (error) {
-      console.error('Error processing emotion:', error);
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        console.warn('Emotion detection request timed out');
+      } else if (error instanceof Error && error.name === 'TypeError') {
+        console.warn('Could not connect to emotion server - is it running on localhost:5139?');
+        console.warn('CORS might be blocking the request. Check browser console for CORS errors.');
+      } else {
+        console.error('Error processing emotion:', error);
+      }
+      // Don't update emotion on error - keep the last known emotion
     }
   };
 
@@ -246,10 +375,20 @@ export function VoiceAssistant() {
   const playNextAudioChunk = async () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
+      // Notify backend that TTS playback stopped
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'tts_stop' }));
+      }
       return;
     }
 
-    isPlayingRef.current = true;
+    // If this is the first chunk, notify backend that TTS started
+    if (!isPlayingRef.current) {
+      isPlayingRef.current = true;
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'tts_start' }));
+      }
+    }
     
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext();
@@ -308,6 +447,11 @@ export function VoiceAssistant() {
 
       mediaRecorder.start();
       setIsRecording(true);
+      
+      // Notify backend that recording started
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'recording_start' }));
+      }
     } catch (error) {
       console.error('Error starting recording:', error);
     }
@@ -318,6 +462,11 @@ export function VoiceAssistant() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      
+      // Notify backend that recording stopped
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'recording_stop' }));
+      }
     }
   };
 
@@ -366,13 +515,28 @@ export function VoiceAssistant() {
 
   const getEmotionColor = (emotion: string) => {
     const colors: Record<string, string> = {
+      // User emotions
       happy: '#4CAF50',
       sad: '#2196F3',
       angry: '#F44336',
       neutral: '#9E9E9E',
       fearful: '#9C27B0',
       disgusted: '#FF9800',
-      surprised: '#FFEB3B'
+      surprised: '#FFEB3B',
+      // Additional mappings for your emotion server
+      anger: '#F44336',
+      contempt: '#795548',
+      disgust: '#FF9800',
+      fear: '#9C27B0',
+      surprise: '#FFEB3B',
+      // AI tones
+      calm: '#64B5F6',        // Light blue - soothing
+      empathetic: '#81C784',  // Soft green - warm
+      cheerful: '#FFD54F',    // Bright yellow - happy
+      reassuring: '#BA68C8',  // Soft purple - comforting
+      explanatory: '#4FC3F7', // Light cyan - clear
+      understanding: '#A1887F', // Warm brown - accepting
+      friendly: '#66BB6A'     // Medium green - approachable
     };
     return colors[emotion] || '#9E9E9E';
   };
