@@ -635,8 +635,8 @@ async function generateTTSForSentence(
             emotionPrompt = 'Speak with intense anger and aggression. Use a loud, forceful, and confrontational tone. Show strong emotion in your voice.';
             console.log('🎭 TTS: ANGRY + HOSTILE user → Speaking with INTENSE ANGER');
           } else {
-            emotionPrompt = 'Speak with clear anger and frustration. Use a stern and annoyed tone, showing your displeasure clearly.';
-            console.log('🎭 TTS: ANGRY user → Speaking with ANGER');
+            emotionPrompt = 'Speak in a calm, understanding tone. Be patient and professional, acknowledging their frustration without matching it.';
+            console.log('🎭 TTS: ANGRY (but civil) user → Speaking CALMLY');
           }
           break;
         case 'sad':
