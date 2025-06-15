@@ -1,7 +1,8 @@
 # Self-Aware AI
 
 
-https://github.com/user-attachments/assets/df2f0203-6213-4c03-bd41-7051e36ea3fb
+
+https://github.com/user-attachments/assets/1eb19437-42ec-4c5d-b1ea-637c86e04867
 
 
 An AI assistant that can read emotions from video and respond with voice using advanced speech processing.
