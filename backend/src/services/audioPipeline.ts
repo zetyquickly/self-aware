@@ -335,7 +335,15 @@ async function streamInflectionResponse(
 
 CRITICAL: You can SEE the user's face. Trust facial expressions over words. Mixed emotions are normal - respond to the blend you see.
 
+<<<<<<< Updated upstream
 ${getEmotionContext(session)}
+=======
+CURRENT SITUATION: ${getEmotionContext(session)}
+
+START EVERY RESPONSE WITH DESCRIBING THE USER'S EMOTION. WHEN USER ASKS ABOUT THEIR EMOTION, YOU MUST RESPOND BASED ON THE INPUT EMOTION YOU RECEIVED.
+
+YOUR RESPONSE MUST FOLLOW THESE EXACT RULES:
+>>>>>>> Stashed changes
 
 ${(() => {
   // Get emotion blend for nuanced response
